@@ -22,6 +22,14 @@ from config import get_config
 logger = logging.getLogger(__name__)
 cfg = get_config()
 
+# Primary model from config; fallbacks if Google returns 404 (e.g. deprecated gemini-2.0-flash)
+_MODEL_FALLBACKS = (
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-latest",
+    "gemini-2.0-flash-001",
+    "gemini-1.5-flash",
+)
+
 # ---------------------------------------------------------------------------
 # Output JSON schema (injected into the system prompt)
 # ---------------------------------------------------------------------------
@@ -128,14 +136,33 @@ class AISynthesizer:
                 logger.error("Synthesis retry also failed: %s", retry_exc)
                 return _placeholder_briefing(str(retry_exc))
 
-    @retry(
-        stop=stop_after_attempt(2),
-        wait=wait_fixed(10),
-        retry=retry_if_exception_type(Exception),
-    )
     def _call_api(self, user_content: str, *, system_prompt: str) -> dict[str, Any]:
+        models_to_try: list[str] = []
+        for name in (cfg.gemini_model, *_MODEL_FALLBACKS):
+            if name and name not in models_to_try:
+                models_to_try.append(name)
+
+        last_exc: Exception | None = None
+        for model_name in models_to_try:
+            try:
+                return self._generate_with_model(
+                    model_name, user_content, system_prompt=system_prompt
+                )
+            except Exception as exc:
+                last_exc = exc
+                err = str(exc).lower()
+                if "404" in err or "not found" in err or "no longer available" in err:
+                    logger.warning("Model %s unavailable (%s). Trying next.", model_name, exc)
+                    continue
+                raise
+
+        raise last_exc or RuntimeError("No Gemini models available")
+
+    def _generate_with_model(
+        self, model_name: str, user_content: str, *, system_prompt: str
+    ) -> dict[str, Any]:
         model = genai.GenerativeModel(
-            model_name=cfg.gemini_model,
+            model_name=model_name,
             system_instruction=system_prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
@@ -147,7 +174,6 @@ class AISynthesizer:
         response = model.generate_content(user_content)
         raw_text = response.text.strip()
 
-        # Strip accidental markdown fences just in case
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
             raw_text = re.sub(r"\n?```$", "", raw_text)
@@ -156,7 +182,7 @@ class AISynthesizer:
 
         logger.info(
             "Synthesis complete via %s. Input tokens: %s, Output tokens: %s",
-            cfg.gemini_model,
+            model_name,
             getattr(response.usage_metadata, "prompt_token_count", "N/A"),
             getattr(response.usage_metadata, "candidates_token_count", "N/A"),
         )
