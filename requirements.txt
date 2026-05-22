@@ -1,0 +1,13 @@
+google-generativeai>=0.8.0
+APScheduler==3.10.4
+beautifulsoup4==4.12.3
+feedparser==6.0.11
+Jinja2==3.1.4
+lxml>=5.3.0
+premailer==3.10.0
+python-dotenv==1.0.1
+pytz==2024.2
+requests==2.32.3
+sendgrid==6.11.0
+tenacity==9.0.0
+yfinance==0.2.51
