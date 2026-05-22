@@ -1,447 +1,248 @@
-{# ============================================================ #}
-{# Jinja2 macro: reusable bullet section (must be defined first) #}
-{# ============================================================ #}
-{% macro _section(title, items, heading_color, show_risk=False) %}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-  <tr>
-    <td class="section-body" style="padding:28px 40px 8px 40px;">
-      <p style="margin:0 0 16px 0; color:{{ heading_color }}; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
-        &#9632;&nbsp; {{ title }}
-      </p>
-    </td>
-  </tr>
-  {% for item in items %}
-  <tr>
-    <td class="section-body" style="padding:0 40px 18px 40px;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-        <tr>
-          <td width="6" valign="top">
-            <p style="margin:2px 0 0 0; color:#0A1628; font-size:16px; font-family:Arial,sans-serif; line-height:1;">&#8250;</p>
-          </td>
-          <td style="padding-left:10px;" valign="top">
-            <p style="margin:0 0 5px 0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; font-weight:700; line-height:1.35;">
-              {{ item.headline }}
-            </p>
-            <p style="margin:0 0 5px 0; color:#3D4F62; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; line-height:1.55;">
-              {{ item.body }}
-            </p>
-            <p style="margin:0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; text-transform:uppercase; letter-spacing:0.8px;">
-              {{ item.source }}
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-  {% endfor %}
-  <tr><td style="background-color:#E8EBF0; height:1px; line-height:1px; font-size:1px;">&nbsp;</td></tr>
-</table>
-{% endmacro %}
 <!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="format-detection" content="telephone=no">
   <title>Morning Briefing &mdash; {{ date_long }}</title>
-  <!--[if mso]>
-  <noscript>
-    <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
-  </noscript>
-  <![endif]-->
   <style type="text/css">
-    /* Reset */
-    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
-    img { -ms-interpolation-mode: bicubic; border: 0; }
-    body { margin: 0; padding: 0; width: 100% !important; background-color: #F0F2F5; }
-
-    /* Mobile */
-    @media only screen and (max-width: 680px) {
-      .email-container { width: 100% !important; }
-      .market-cell { display: block !important; width: 50% !important; float: left; box-sizing: border-box; padding: 8px 10px !important; }
-      .section-body { padding: 20px 16px !important; }
-      .header-inner { padding: 22px 16px !important; }
-      .footer-inner { padding: 20px 16px !important; }
-      .market-table { width: 100% !important; }
-      h1.masthead { font-size: 18px !important; }
+    body, table, td, a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+    table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+    body { margin:0; padding:0; background-color:#F0F2F5; }
+    @media only screen and (max-width:680px) {
+      .email-container { width:100% !important; }
+      .header-inner, .section-pad, .snap-pad, .footer-inner { padding:18px 14px !important; }
+      .market-cell { display:block !important; width:50% !important; float:left; box-sizing:border-box; }
+      h1.masthead { font-size:17px !important; }
+      .narrative-p { font-size:13px !important; }
     }
   </style>
 </head>
-<body style="margin:0; padding:0; background-color:#F0F2F5;">
+<body style="margin:0;padding:0;background-color:#F0F2F5;">
 
-<!-- Preheader (hidden preview text) -->
-<div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#F0F2F5;">
-  {{ preheader_text | truncate(150, True, '') }}
-  &zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+<!-- Preheader -->
+<div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:#F0F2F5;">
+  {{ preheader_text | truncate(150, True, '') }}&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
 </div>
 
-<!-- Email wrapper -->
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
-       style="background-color:#F0F2F5; padding: 20px 0;">
+       style="background:#F0F2F5;padding:20px 0;">
+<tr><td align="center">
+
+<table role="presentation" class="email-container" width="680" cellspacing="0" cellpadding="0" border="0"
+       style="max-width:680px;width:100%;background:#FFFFFF;border-radius:4px;overflow:hidden;
+              box-shadow:0 2px 16px rgba(0,0,0,0.12);">
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- HEADER                                                      -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
   <tr>
-    <td align="center">
-
-      <!-- Main container: max 680px -->
-      <table role="presentation" class="email-container"
-             width="680" cellspacing="0" cellpadding="0" border="0"
-             style="max-width:680px; width:100%; background:#FFFFFF; border-radius:4px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.10);">
-
-        <!-- ============================================================ -->
-        <!-- HEADER                                                        -->
-        <!-- ============================================================ -->
+    <td style="background:#0A1628;padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
         <tr>
-          <td style="background-color:#0A1628; padding:0;">
+          <td class="header-inner" style="padding:28px 40px;">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
               <tr>
-                <td class="header-inner" style="padding: 28px 40px;">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                    <tr>
-                      <td valign="middle">
-                        <h1 class="masthead" style="margin:0; color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; font-weight:700; letter-spacing:3px; text-transform:uppercase;">
-                          MORNING BRIEFING
-                        </h1>
-                        <p style="margin:6px 0 0 0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12px; letter-spacing:1.5px; text-transform:uppercase;">
-                          {{ day_of_week }}, {{ date_long }}
-                        </p>
-                      </td>
-                      <td valign="middle" align="right">
-                        <span style="display:inline-block; border:1px solid #1A3A5C; background-color:#0D2040; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-weight:600; letter-spacing:1px; text-transform:uppercase; padding:5px 12px; border-radius:2px;">
-                          {{ generated_time }} ET
-                        </span>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              <!-- Thin accent line -->
-              <tr>
-                <td style="background:linear-gradient(90deg, #00A86B 0%, #0A4A7A 60%, #0A1628 100%); height:3px; line-height:3px; font-size:3px;">&nbsp;</td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- ============================================================ -->
-        <!-- MARKET SNAPSHOT                                               -->
-        <!-- ============================================================ -->
-        <tr>
-          <td style="background-color:#0D1F38; padding:0;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                <td style="padding:14px 40px 8px 40px;">
-                  <p style="margin:0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
-                    MARKET SNAPSHOT
+                <td valign="middle">
+                  <h1 class="masthead" style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:20px;font-weight:700;letter-spacing:3px;text-transform:uppercase;">
+                    MORNING BRIEFING
+                  </h1>
+                  <p style="margin:5px 0 0 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;">
+                    {{ day_of_week }}, {{ date_long }}
                   </p>
                 </td>
-              </tr>
-              <tr>
-                <td style="padding:6px 32px 18px 32px;">
-                  <table role="presentation" class="market-table" width="100%" cellspacing="0" cellpadding="0" border="0">
-                    <tr>
-                      {% for key, data in market_snapshot.items() %}
-                      <td class="market-cell" valign="top" style="padding:8px; text-align:center;">
-                        <p style="margin:0 0 3px 0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:9px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase;">
-                          {{ data.label }}
-                        </p>
-                        {% if data.value is not none %}
-                          <p style="margin:0 0 2px 0; color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:14px; font-weight:700;">
-                            {% if data.format == 'yield' %}
-                              {{ "%.2f"|format(data.value) }}%
-                            {% elif data.format == 'price' %}
-                              ${{ "{:,.2f}".format(data.value) }}
-                            {% elif data.format == 'crypto' %}
-                              ${{ "{:,.0f}".format(data.value) }}
-                            {% else %}
-                              {{ "{:,.2f}".format(data.value) }}
-                            {% endif %}
-                          </p>
-                          {% if data.change_pct is not none %}
-                            {% if data.direction == 'up' %}
-                              <p style="margin:0; color:#00A86B; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:11px; font-weight:600;">
-                                &#9650; {{ "%+.2f"|format(data.change_pct) }}%
-                              </p>
-                            {% elif data.direction == 'down' %}
-                              <p style="margin:0; color:#CC2936; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:11px; font-weight:600;">
-                                &#9660; {{ "%.2f"|format(data.change_pct) }}%
-                              </p>
-                            {% else %}
-                              <p style="margin:0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:11px; font-weight:600;">
-                                &#9644; {{ "%+.2f"|format(data.change_pct) }}%
-                              </p>
-                            {% endif %}
-                          {% endif %}
-                        {% else %}
-                          <p style="margin:0; color:#4A5A6A; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12px;">N/A</p>
-                        {% endif %}
-                      </td>
-                      {% endfor %}
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              <!-- Bottom border -->
-              <tr>
-                <td style="background-color:#1A2F4A; height:1px; line-height:1px; font-size:1px;">&nbsp;</td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- ============================================================ -->
-        <!-- TOP STORY                                                      -->
-        <!-- ============================================================ -->
-        {% if top_story %}
-        <tr>
-          <td style="background-color:#FFFFFF; padding:0;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                <td class="section-body" style="padding:28px 40px 24px 40px; border-bottom:1px solid #E8EBF0;">
-                  <!-- Section label -->
-                  <p style="margin:0 0 12px 0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
-                    &#9632;&nbsp; TOP STORY
-                  </p>
-                  <!-- Headline -->
-                  <h2 style="margin:0 0 12px 0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; font-weight:700; line-height:1.3;">
-                    {% if top_story.url %}
-                      <a href="{{ top_story.url }}" style="color:#0A1628; text-decoration:none;">{{ top_story.headline }}</a>
-                    {% else %}
-                      {{ top_story.headline }}
-                    {% endif %}
-                  </h2>
-                  <!-- Summary -->
-                  <p style="margin:0 0 10px 0; color:#3D4F62; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; line-height:1.6;">
-                    {{ top_story.summary }}
-                  </p>
-                  <!-- Source attribution -->
-                  <p style="margin:0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:1px;">
-                    Source: {{ top_story.source }}
-                  </p>
+                <td valign="middle" align="right">
+                  <span style="display:inline-block;border:1px solid #1A3A5C;background:#0D2040;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;padding:5px 12px;border-radius:2px;">
+                    {{ generated_time }} ET
+                  </span>
                 </td>
               </tr>
             </table>
           </td>
         </tr>
-        {% endif %}
-
-        <!-- ============================================================ -->
-        <!-- MARKETS & MACRO                                               -->
-        <!-- ============================================================ -->
-        {% if markets_macro %}
-        <tr>
-          <td style="background-color:#FAFBFC; padding:0;">
-            {{ _section("MARKETS & MACRO", markets_macro, "#0A1628", show_risk=False) }}
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ============================================================ -->
-        <!-- CORPORATE INTELLIGENCE                                        -->
-        <!-- ============================================================ -->
-        {% if corporate_intelligence %}
-        <tr>
-          <td style="background-color:#FFFFFF; padding:0;">
-            {{ _section("CORPORATE INTELLIGENCE", corporate_intelligence, "#0A1628", show_risk=False) }}
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ============================================================ -->
-        <!-- TECH & AI WATCH                                               -->
-        <!-- ============================================================ -->
-        {% if tech_ai_watch %}
-        <tr>
-          <td style="background-color:#FAFBFC; padding:0;">
-            {{ _section("TECH & AI WATCH", tech_ai_watch, "#0A1628", show_risk=False) }}
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ============================================================ -->
-        <!-- RISK RADAR                                                    -->
-        <!-- ============================================================ -->
-        {% if risk_radar %}
-        <tr>
-          <td style="background-color:#FFFFFF; padding:0;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                <td class="section-body" style="padding:28px 40px 8px 40px;">
-                  <p style="margin:0 0 16px 0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
-                    &#9632;&nbsp; RISK RADAR
-                  </p>
-                </td>
-              </tr>
-              {% for item in risk_radar %}
-              <tr>
-                <td class="section-body" style="padding:0 40px 20px 40px;">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                    <tr>
-                      <td style="border-left:3px solid {% if item.risk_level == 'high' %}#CC2936{% elif item.risk_level == 'low' %}#00A86B{% else %}#F5A623{% endif %}; padding-left:14px;">
-                        <p style="margin:0 0 5px 0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; font-weight:700; line-height:1.3;">
-                          {{ item.headline }}
-                          <span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:2px; font-size:9px; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:{% if item.risk_level == 'high' %}#FEE8EA{% elif item.risk_level == 'low' %}#E8F8F2{% else %}#FEF8EE{% endif %}; color:{% if item.risk_level == 'high' %}#CC2936{% elif item.risk_level == 'low' %}#00A86B{% else %}#D4821A{% endif %};">
-                            {{ item.risk_level | upper }} RISK
-                          </span>
-                        </p>
-                        <p style="margin:0 0 4px 0; color:#3D4F62; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; line-height:1.55;">
-                          {{ item.body }}
-                        </p>
-                        <p style="margin:0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; text-transform:uppercase; letter-spacing:0.8px;">
-                          {{ item.source }}
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              {% endfor %}
-              <tr><td style="background-color:#E8EBF0; height:1px; line-height:1px; font-size:1px; margin:0 40px;">&nbsp;</td></tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ============================================================ -->
-        <!-- DATA POINTS                                                   -->
-        <!-- ============================================================ -->
-        {% if data_points %}
-        <tr>
-          <td style="background-color:#FAFBFC; padding:0;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                <td class="section-body" style="padding:28px 40px 8px 40px;">
-                  <p style="margin:0 0 16px 0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
-                    &#9632;&nbsp; DATA POINTS
-                  </p>
-                </td>
-              </tr>
-              <tr>
-                <td class="section-body" style="padding:0 40px 24px 40px;">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                    {% for dp in data_points %}
-                    <tr>
-                      <td style="padding:8px 0; border-bottom:1px solid #E8EBF0;" valign="top">
-                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                          <tr>
-                            <td width="200" valign="top">
-                              <p style="margin:0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">
-                                {{ dp.metric }}
-                              </p>
-                            </td>
-                            <td valign="top">
-                              <p style="margin:0 0 2px 0; color:#0A1628; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; font-weight:700;">
-                                {{ dp.value }}
-                              </p>
-                              <p style="margin:0; color:#5A6A7A; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12px; line-height:1.4;">
-                                {{ dp.context }}
-                              </p>
-                            </td>
-                          </tr>
-                        </table>
-                      </td>
-                    </tr>
-                    {% endfor %}
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ============================================================ -->
-        <!-- WHAT TO WATCH                                                 -->
-        <!-- ============================================================ -->
-        {% if what_to_watch %}
-        <tr>
-          <td style="background-color:#0D1F38; padding:0;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                <td class="section-body" style="padding:28px 40px 10px 40px;">
-                  <p style="margin:0 0 16px 0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
-                    &#9632;&nbsp; WHAT TO WATCH (NEXT 24–48 HRS)
-                  </p>
-                </td>
-              </tr>
-              {% for item in what_to_watch %}
-              <tr>
-                <td class="section-body" style="padding:0 40px 18px 40px;">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                    <tr>
-                      <td width="6" valign="top">
-                        <p style="margin:3px 0 0 0; color:#F5A623; font-size:14px; font-family:Arial,sans-serif;">&bull;</p>
-                      </td>
-                      <td style="padding-left:12px;" valign="top">
-                        <p style="margin:0 0 3px 0; color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; font-weight:700; line-height:1.3;">
-                          {{ item.headline }}
-                          <span style="color:#F5A623; font-size:11px; font-weight:400; margin-left:8px;">{{ item.timing }}</span>
-                        </p>
-                        <p style="margin:0; color:#8A9BB3; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5;">
-                          {{ item.context }}
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              {% endfor %}
-              <tr><td style="height:12px; line-height:12px; font-size:12px;">&nbsp;</td></tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ============================================================ -->
-        <!-- FOOTER                                                        -->
-        <!-- ============================================================ -->
-        <tr>
-          <td style="background-color:#0A1628; padding:0;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <!-- Accent line -->
-              <tr>
-                <td style="background:linear-gradient(90deg, #00A86B 0%, #0A4A7A 60%, #0A1628 100%); height:2px; line-height:2px; font-size:2px;">&nbsp;</td>
-              </tr>
-              <tr>
-                <td class="footer-inner" style="padding:24px 40px;">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                    <tr>
-                      <td>
-                        <p style="margin:0 0 6px 0; color:#FFFFFF; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px;">
-                          MORNING BRIEFING
-                        </p>
-                        <p style="margin:0 0 10px 0; color:#4A6080; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:11px; line-height:1.5;">
-                          Generated {{ generated_at }} &nbsp;|&nbsp;
-                          Sources: {{ sources_used | join(", ") }}
-                        </p>
-                        {% if generation_notes %}
-                        <p style="margin:0 0 10px 0; color:#4A6080; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; font-style:italic; line-height:1.5;">
-                          Note: {{ generation_notes }}
-                        </p>
-                        {% endif %}
-                        <p style="margin:0; color:#2A3F5A; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:10px; line-height:1.5;">
-                          This briefing is for informational purposes only and does not constitute investment advice.
-                          Market data may be delayed. Always verify critical information with primary sources.
-                          &nbsp;|&nbsp;
-                          <a href="{{ unsubscribe_url }}" style="color:#4A6080; text-decoration:underline;">Unsubscribe</a>
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
+        <tr><td style="background:linear-gradient(90deg,#00A86B 0%,#0A4A7A 60%,#0A1628 100%);height:3px;line-height:3px;font-size:3px;">&nbsp;</td></tr>
       </table>
-      <!-- End main container -->
-
     </td>
   </tr>
-</table>
-<!-- End email wrapper -->
 
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- TABLE OF CONTENTS                                           -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <tr>
+    <td style="background:#0D1F38;padding:14px 40px;">
+      <p style="margin:0 0 8px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
+        IN THIS BRIEFING
+      </p>
+      <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;line-height:1.8;">
+        {% for section in sections %}
+        <span style="color:#4A8AB3;margin-right:6px;">&#9632;</span>
+        <span style="color:#C0CCD8;">{{ section.title }}</span>
+        {% if not loop.last %}<span style="color:#1A3A5C;">&nbsp;&nbsp;</span>{% endif %}
+        {% endfor %}
+      </p>
+    </td>
+  </tr>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- MARKET SNAPSHOT                                             -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  {% if market_snapshot %}
+  <tr>
+    <td style="background:#0D1F38;padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td class="snap-pad" style="padding:8px 40px 4px 40px;">
+            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
+              MARKET SNAPSHOT
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 32px 16px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                {% for key, data in market_snapshot.items() %}
+                <td class="market-cell" valign="top" style="padding:6px 8px;text-align:center;">
+                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">
+                    {{ data.label }}
+                  </p>
+                  {% if data.value is not none %}
+                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;">
+                      {% if data.format == 'yield' %}{{ "%.2f"|format(data.value) }}%
+                      {% elif data.format == 'price' %}${{ "{:,.2f}".format(data.value) }}
+                      {% elif data.format == 'crypto' %}${{ "{:,.0f}".format(data.value) }}
+                      {% elif data.format == 'fx' %}{{ "%.4f"|format(data.value) }}
+                      {% else %}{{ "{:,.2f}".format(data.value) }}{% endif %}
+                    </p>
+                    {% if data.change_pct is not none %}
+                      {% if data.direction == 'up' %}
+                        <p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% elif data.direction == 'down' %}
+                        <p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
+                      {% else %}
+                        <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">&#9644; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% endif %}
+                    {% endif %}
+                  {% else %}
+                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
+                  {% endif %}
+                </td>
+                {% endfor %}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- CONTENT SECTIONS (loop)                                     -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  {% for section in sections %}
+  <tr>
+    <td style="background:{% if loop.index is odd %}#FFFFFF{% else %}#F8F9FB{% endif %};padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+
+        <!-- Section header bar -->
+        <tr>
+          <td style="background:{{ section.color }};padding:10px 40px;">
+            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;">
+              {{ section.title | upper }}
+            </p>
+          </td>
+        </tr>
+
+        <!-- Narrative -->
+        {% if section.narrative %}
+        <tr>
+          <td class="section-pad" style="padding:22px 40px 8px 40px;">
+            {% for para in section.narrative.split('\n\n') %}
+            {% if para.strip() %}
+            <p class="narrative-p" style="margin:0 0 14px 0;color:#2A3A4A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.7;">
+              {{ para.strip() }}
+            </p>
+            {% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+
+        <!-- Bullets -->
+        {% if section.bullets %}
+        <tr>
+          <td style="padding:4px 40px 20px 40px;">
+            <!-- Divider line -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:12px;">
+              <tr><td style="background:#E0E5EC;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+            </table>
+            <!-- Bullet table -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              {% for bullet in section.bullets %}
+              <tr>
+                <td style="padding:5px 0;border-bottom:1px solid #F0F2F5;" valign="top">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                    <tr>
+                      <td width="180" valign="top" style="padding-right:12px;">
+                        <p style="margin:0;color:#0A1628;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">
+                          {{ bullet.label }}
+                        </p>
+                        {% if bullet.value %}
+                        <p style="margin:2px 0 0 0;color:#{{ '00A86B' if '+' in bullet.value|string else 'CC2936' if '-' in bullet.value|string else '0A4A7A' }};font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">
+                          {{ bullet.value }}
+                        </p>
+                        {% endif %}
+                      </td>
+                      <td valign="top">
+                        <p style="margin:0;color:#4A5A6A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;">
+                          {{ bullet.note }}
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              {% endfor %}
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
+      </table>
+    </td>
+  </tr>
+  {% endfor %}
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- FOOTER                                                      -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <tr>
+    <td style="background:#0A1628;padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr><td style="background:linear-gradient(90deg,#00A86B 0%,#0A4A7A 60%,#0A1628 100%);height:2px;line-height:2px;font-size:2px;">&nbsp;</td></tr>
+        <tr>
+          <td class="footer-inner" style="padding:22px 40px;">
+            <p style="margin:0 0 5px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
+              MORNING BRIEFING
+            </p>
+            <p style="margin:0 0 8px 0;color:#3A5070;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;line-height:1.5;">
+              Generated {{ generated_at }}&nbsp;&nbsp;|&nbsp;&nbsp;Sources: {{ sources_list }}
+            </p>
+            <p style="margin:0;color:#2A3A4A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;line-height:1.5;">
+              For informational purposes only. Not investment advice. Market data may be delayed.
+              &nbsp;|&nbsp;
+              <a href="{{ unsubscribe_url }}" style="color:#3A5070;text-decoration:underline;">Unsubscribe</a>
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
 </body>
 </html>
-

@@ -1,22 +1,30 @@
 """
 News aggregation module.
 
-Pulls live data from RSS feeds, Yahoo Finance (via yfinance), and SEC EDGAR.
-Each source is isolated — a failure skips that source and logs the error
-without blocking the full pipeline.
+Data sources:
+  - Stooq       : market prices (no API key)
+  - Finnhub     : financial news, earnings calendar, economic calendar (free key)
+  - FRED        : Federal Reserve macro data series (free key)
+  - NewsAPI     : keyword-targeted news per section (free key)
+  - RSS feeds   : Reuters, CNBC, MarketWatch, FT, WSJ, Fed press releases
+  - SEC EDGAR   : overnight 8-K filings
+
+Each source fails independently — a broken source skips and logs without
+blocking the rest of the pipeline.
 """
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import feedparser
 import requests
-import yfinance as yf
 
 from config import get_config
 
@@ -30,86 +38,139 @@ RSS_FEEDS: dict[str, str] = {
     "reuters_business": "https://feeds.reuters.com/reuters/businessNews",
     "reuters_markets": "https://feeds.reuters.com/reuters/marketsNews",
     "reuters_tech": "https://feeds.reuters.com/reuters/technologyNews",
+    "reuters_health": "https://feeds.reuters.com/reuters/healthNews",
     "cnbc_markets": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "cnbc_finance": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+    "cnbc_tech": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
     "marketwatch_top": "https://feeds.marketwatch.com/marketwatch/topstories/",
     "marketwatch_markets": "https://feeds.marketwatch.com/marketwatch/marketpulse/",
     "yahoo_finance": "https://finance.yahoo.com/rss/headline",
     "fed_press": "https://www.federalreserve.gov/feeds/press_all.xml",
-    "ft_world": "https://www.ft.com/rss/home/us",
     "wsj_markets": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
-    "barrons": "https://www.barrons.com/real-time-market-data/feed",
+    "ft_world": "https://www.ft.com/rss/home/us",
     "seeking_alpha": "https://seekingalpha.com/market_currents.xml",
 }
 
 # ---------------------------------------------------------------------------
-# Category keyword scoring
+# Section definitions — keywords route headlines to sections
 # ---------------------------------------------------------------------------
-CATEGORY_KEYWORDS: dict[str, list[str]] = {
+SECTIONS = [
+    "markets_macro",
+    "corporate_earnings",
+    "technology_ai",
+    "healthcare",
+    "industrials",
+    "energy_commodities",
+    "geopolitical_risk",
+    "economic_data",
+]
+
+SECTION_KEYWORDS: dict[str, list[str]] = {
     "markets_macro": [
-        "federal reserve", "fed ", "fomc", "interest rate", "inflation", "cpi", "ppi",
-        "gdp", "employment", "unemployment", "jobs report", "nonfarm", "treasury",
-        "yield", "basis points", "rate hike", "rate cut", "powell", "lagarde",
-        "central bank", "monetary policy", "recession", "dollar", "euro", "yen",
-        "yuan", "fx", "currency", "dxy", "oil price", "crude", "wti", "brent",
-        "gold price", "commodity", "supply chain", "trade deficit",
+        "s&p 500", "nasdaq", "dow jones", "stock market", "wall street", "equity",
+        "bond market", "treasury yield", "10-year", "yield curve", "fed funds",
+        "futures", "market rally", "market selloff", "bear market", "bull market",
+        "volatility", "vix", "options", "hedge fund", "asset management",
+        "dollar index", "dxy", "forex", "currency", "euro", "yen", "pound",
     ],
-    "corporate_intelligence": [
-        "earnings", "quarterly", "revenue", "profit", "eps", "guidance", "outlook",
-        "acquisition", "merger", "m&a", "ipo", "buyback", "dividend", "analyst",
-        "upgrade", "downgrade", "price target", "ceo", "cfo", "board", "layoff",
-        "restructuring", "beat", "miss", "raised", "lowered", "forecast",
-        "sec filing", "8-k", "13-d", "13-f",
+    "corporate_earnings": [
+        "earnings", "quarterly results", "revenue", "profit", "eps", "guidance",
+        "outlook", "beat expectations", "missed estimates", "acquisition",
+        "merger", "m&a", "buyout", "ipo", "initial public offering", "buyback",
+        "dividend", "analyst upgrade", "analyst downgrade", "price target",
+        "ceo", "chief executive", "board of directors", "layoff", "restructuring",
+        "sec filing", "8-k", "13-d", "annual report",
     ],
-    "tech_ai_watch": [
-        "artificial intelligence", " ai ", "openai", "chatgpt", "llm", "large language",
-        "nvidia", "semiconductor", "chip", "microsoft", "google", "alphabet", "meta",
-        "apple", "amazon", "aws", "cloud computing", "startup", "funding round",
-        "series a", "series b", "venture capital", "antitrust", "big tech",
-        "regulation", "data privacy", "cybersecurity", "hack", "breach",
+    "technology_ai": [
+        "artificial intelligence", " ai ", "machine learning", "openai", "chatgpt",
+        "large language model", "llm", "nvidia", "semiconductor", "chip",
+        "microsoft", "google", "alphabet", "meta", "apple", "amazon", "aws",
+        "cloud computing", "data center", "startup", "funding round", "series",
+        "venture capital", "antitrust tech", "big tech", "cybersecurity",
+        "data breach", "software", "saas", "autonomous", "robotics",
     ],
-    "risk_radar": [
-        "sanction", "tariff", "trade war", "geopolit", "conflict", "war", "iran",
-        "russia", "ukraine", "china", "middle east", "taiwan", "north korea",
-        "sec ", "ftc", "doj", "lawsuit", "investigation", "penalty", "fine",
-        "compliance", "regulatory", "ban", "probe", "subpoena", "indictment",
-        "default", "credit downgrade", "sovereign", "systemic risk",
+    "healthcare": [
+        "healthcare", "pharmaceutical", "pharma", "biotech", "biotechnology",
+        "fda approval", "fda rejection", "clinical trial", "drug approval",
+        "hospital", "health insurance", "medicare", "medicaid", "unitedhealth",
+        "johnson & johnson", "pfizer", "eli lilly", "abbvie", "merck",
+        "vaccine", "therapy", "oncology", "rare disease", "biosimilar",
+        "cms", "affordable care act", "health system", "medical device",
+    ],
+    "industrials": [
+        "manufacturing", "industrial", "factory", "production", "aerospace",
+        "defense contract", "caterpillar", "boeing", "general electric", "ge ",
+        "honeywell", "3m", "raytheon", "lockheed", "northrop", "ups", "fedex",
+        "logistics", "freight", "railroad", "infrastructure", "construction",
+        "automation", "supply chain", "inventory", "pmi", "purchasing managers",
+        "heavy equipment", "machinery", "union", "labor contract",
+    ],
+    "energy_commodities": [
+        "oil price", "crude oil", "wti", "brent", "opec", "natural gas",
+        "lng", "gasoline", "refinery", "exxon", "chevron", "conocophillips",
+        "schlumberger", "halliburton", "pipeline", "renewable energy", "solar",
+        "wind energy", "battery", "lithium", "copper", "iron ore", "steel",
+        "aluminum", "gold price", "silver", "commodity", "energy sector",
+        "drilling", "shale", "offshore", "carbon", "emissions trading",
+    ],
+    "geopolitical_risk": [
+        "sanction", "tariff", "trade war", "trade dispute", "geopolit",
+        "conflict", "war", "military", "iran", "russia", "ukraine", "china",
+        "middle east", "taiwan strait", "north korea", "israel", "nato",
+        "g7", "g20", "imf", "world bank", "emerging market", "sovereign debt",
+        "election", "political risk", "coup", "protest", "regime",
+        "sec investigation", "ftc", "doj", "antitrust", "regulatory action",
+    ],
+    "economic_data": [
+        "inflation", "consumer price", "cpi", "pce", "producer price", "ppi",
+        "federal reserve", "fomc", "powell", "interest rate", "rate hike",
+        "rate cut", "monetary policy", "quantitative", "balance sheet",
+        "unemployment rate", "jobs report", "nonfarm payroll", "jobless claims",
+        "gdp", "gross domestic product", "recession", "economic growth",
+        "consumer confidence", "retail sales", "housing starts", "existing home",
+        "trade balance", "current account", "personal income", "spending",
     ],
 }
 
-# Market tickers
-MARKET_TICKERS: dict[str, str] = {
-    "sp500": "^GSPC",
-    "nasdaq": "^IXIC",
-    "dow": "^DJI",
-    "treasury_10y": "^TNX",
-    "dxy": "DX-Y.NYB",
-    "wti_crude": "CL=F",
-    "gold": "GC=F",
-    "btc": "BTC-USD",
+# Finnhub news categories
+FINNHUB_CATEGORIES = ["general", "merger", "forex", "crypto"]
+
+# NewsAPI targeted queries per section
+NEWSAPI_QUERIES: dict[str, str] = {
+    "healthcare": "healthcare pharmaceutical biotech FDA drug approval",
+    "industrials": "manufacturing industrial aerospace defense infrastructure",
+    "geopolitical_risk": "sanctions tariffs geopolitical trade war conflict",
+    "economic_data": "Federal Reserve inflation CPI GDP unemployment",
+    "technology_ai": "artificial intelligence semiconductor technology regulation",
+    "energy_commodities": "oil crude OPEC energy commodity natural gas",
 }
 
-MARKET_LABELS: dict[str, str] = {
-    "sp500": "S&P 500",
-    "nasdaq": "NASDAQ",
-    "dow": "Dow Jones",
-    "treasury_10y": "10Y Treasury",
-    "dxy": "DXY",
-    "wti_crude": "WTI Crude",
-    "gold": "Gold",
-    "btc": "Bitcoin",
+# FRED series to pull
+FRED_SERIES: dict[str, str] = {
+    "fed_funds_rate": "FEDFUNDS",
+    "cpi_yoy": "CPIAUCSL",
+    "core_cpi": "CPILFESL",
+    "unemployment": "UNRATE",
+    "gdp_growth": "GDP",
+    "yield_spread_10y2y": "T10Y2Y",
+    "mortgage_30y": "MORTGAGE30US",
 }
 
-MARKET_FORMATS: dict[str, str] = {
-    "sp500": "index",
-    "nasdaq": "index",
-    "dow": "index",
-    "treasury_10y": "yield",
-    "dxy": "index",
-    "wti_crude": "price",
-    "gold": "price",
-    "btc": "crypto",
+# Stooq market tickers
+MARKET_TICKERS: dict[str, tuple[str, str, str]] = {
+    "sp500":       ("^spx",   "S&P 500",      "index"),
+    "nasdaq":      ("^ndq",   "NASDAQ 100",   "index"),
+    "dow":         ("^dji",   "Dow Jones",    "index"),
+    "russell2000": ("^rut",   "Russell 2000", "index"),
+    "vix":         ("^vix",   "VIX",          "index"),
+    "treasury_10y":("10us.b", "10Y Treasury", "yield"),
+    "wti_crude":   ("cl.f",   "WTI Crude",    "price"),
+    "gold":        ("xauusd", "Gold",         "price"),
+    "eurusd":      ("eurusd", "EUR/USD",      "fx"),
+    "btc":         ("btcusd", "Bitcoin",      "crypto"),
 }
+
+CATEGORY_KEYWORDS = SECTION_KEYWORDS  # alias used by ai_synthesizer
 
 
 # ---------------------------------------------------------------------------
@@ -121,188 +182,445 @@ class NewsAggregator:
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": (
-                "Mozilla/5.0 (compatible; MorningBriefingBot/1.0; "
-                "+https://github.com/your-org/daily-briefing)"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
             )
         })
 
     def collect_all(self) -> dict[str, Any]:
-        """
-        Run the full collection pipeline.
-
-        Returns a dict with keys:
-          market_snapshot, headlines, sec_filings, sources_used, sources_failed
-        """
         sources_used: list[str] = []
         sources_failed: list[str] = []
         all_headlines: list[dict] = []
 
-        # Market data
+        # --- Market prices ---
         market_snapshot = self._fetch_market_snapshot(sources_used, sources_failed)
 
-        # RSS headlines
+        # --- FRED macro data ---
+        macro_data = self._fetch_fred_data(sources_used, sources_failed)
+
+        # --- Finnhub news + calendars ---
+        earnings_calendar: list[dict] = []
+        economic_calendar: list[dict] = []
+        if cfg.finnhub_api_key:
+            for cat in FINNHUB_CATEGORIES:
+                items = self._fetch_finnhub_news(cat, sources_failed)
+                all_headlines.extend(items)
+            if items:
+                sources_used.append("finnhub")
+            earnings_calendar = self._fetch_finnhub_earnings(sources_used, sources_failed)
+            economic_calendar = self._fetch_finnhub_economic_calendar(sources_used, sources_failed)
+        else:
+            logger.info("FINNHUB_API_KEY not set — skipping Finnhub.")
+
+        # --- RSS feeds ---
         for source_key, url in RSS_FEEDS.items():
             items = self._fetch_rss(source_key, url, sources_failed)
             if items:
                 all_headlines.extend(items)
                 sources_used.append(source_key)
 
-        # SEC EDGAR recent 8-K filings
+        # --- NewsAPI per-section ---
+        newsapi_headlines: list[dict] = []
+        if cfg.news_api_key:
+            for section, query in NEWSAPI_QUERIES.items():
+                items = self._fetch_newsapi(query, section, sources_failed)
+                newsapi_headlines.extend(items)
+            if newsapi_headlines:
+                all_headlines.extend(newsapi_headlines)
+                sources_used.append("newsapi")
+        else:
+            logger.info("NEWS_API_KEY not set — skipping NewsAPI.")
+
+        # --- SEC EDGAR ---
         sec_filings = self._fetch_sec_filings(sources_used, sources_failed)
 
-        # Deduplicate and score
-        headlines = _deduplicate(all_headlines)
-        headlines = _score_and_sort(headlines)
+        # --- Route headlines to sections ---
+        all_headlines = _deduplicate(all_headlines)
+        sections = _route_to_sections(all_headlines)
+
+        # Add earnings to corporate section
+        if earnings_calendar:
+            sections["corporate_earnings"] = (
+                sections.get("corporate_earnings", []) +
+                _earnings_to_headlines(earnings_calendar)
+            )
 
         logger.info(
-            "Aggregation complete: %d headlines, %d SEC filings, %d sources used, %d failed.",
-            len(headlines), len(sec_filings), len(sources_used), len(sources_failed),
+            "Aggregation complete. Total headlines: %d across %d sections. "
+            "Sources used: %d, failed: %d.",
+            sum(len(v) for v in sections.values()),
+            len(sections),
+            len(sources_used),
+            len(sources_failed),
         )
 
         return {
             "market_snapshot": market_snapshot,
-            "headlines": headlines,
+            "macro_data": macro_data,
+            "sections": sections,
+            "earnings_calendar": earnings_calendar,
+            "economic_calendar": economic_calendar,
             "sec_filings": sec_filings,
-            "sources_used": sources_used,
-            "sources_failed": sources_failed,
+            "sources_used": list(set(sources_used)),
+            "sources_failed": list(set(sources_failed)),
             "collected_at": datetime.now(timezone.utc).isoformat(),
         }
 
     # ------------------------------------------------------------------
-    # Internal: market data
+    # Stooq market data
     # ------------------------------------------------------------------
 
     def _fetch_market_snapshot(
         self, sources_used: list, sources_failed: list
     ) -> dict[str, Any]:
         snapshot: dict[str, Any] = {}
+        any_success = False
 
-        for key, ticker_sym in MARKET_TICKERS.items():
+        for key, (stooq_sym, label, fmt) in MARKET_TICKERS.items():
             try:
-                ticker = yf.Ticker(ticker_sym)
-                hist = ticker.history(period="5d")
+                url = f"https://stooq.com/q/d/l/?s={stooq_sym}&i=d"
+                resp = self.session.get(url, timeout=10)
+                resp.raise_for_status()
 
-                if hist.empty or len(hist) < 2:
-                    raise ValueError(f"Insufficient history for {ticker_sym}")
+                rows = [
+                    r for r in csv.DictReader(io.StringIO(resp.text))
+                    if r.get("Close", "N/A") not in ("N/A", "")
+                ]
+                if len(rows) < 2:
+                    raise ValueError(f"Insufficient rows for {stooq_sym}")
 
-                prev_close = float(hist["Close"].iloc[-2])
-                current = float(hist["Close"].iloc[-1])
+                prev_close = float(rows[-2]["Close"])
+                current = float(rows[-1]["Close"])
                 change_pct = ((current - prev_close) / prev_close) * 100
 
                 snapshot[key] = {
-                    "label": MARKET_LABELS[key],
-                    "format": MARKET_FORMATS[key],
+                    "label": label,
+                    "format": fmt,
                     "value": current,
                     "prev_close": prev_close,
                     "change_pct": round(change_pct, 2),
-                    "direction": "up" if change_pct >= 0.05 else ("down" if change_pct <= -0.05 else "flat"),
+                    "direction": (
+                        "up" if change_pct >= 0.05
+                        else "down" if change_pct <= -0.05
+                        else "flat"
+                    ),
                 }
+                any_success = True
             except Exception as exc:
-                logger.warning("Market data failed for %s: %s", ticker_sym, exc)
+                logger.warning("Stooq failed for %s: %s", stooq_sym, exc)
                 snapshot[key] = {
-                    "label": MARKET_LABELS[key],
-                    "format": MARKET_FORMATS[key],
-                    "value": None,
-                    "prev_close": None,
-                    "change_pct": None,
-                    "direction": "flat",
-                    "error": str(exc),
+                    "label": label, "format": fmt,
+                    "value": None, "change_pct": None, "direction": "flat",
                 }
-                sources_failed.append(f"yfinance:{ticker_sym}")
+                sources_failed.append(f"stooq:{stooq_sym}")
 
-        sources_used.append("yfinance")
+        if any_success:
+            sources_used.append("stooq")
         return snapshot
 
     # ------------------------------------------------------------------
-    # Internal: RSS
+    # FRED macro data
+    # ------------------------------------------------------------------
+
+    def _fetch_fred_data(
+        self, sources_used: list, sources_failed: list
+    ) -> dict[str, Any]:
+        if not cfg.fred_api_key:
+            logger.info("FRED_API_KEY not set — skipping FRED.")
+            return {}
+
+        macro: dict[str, Any] = {}
+        base = "https://api.stlouisfed.org/fred/series/observations"
+
+        for name, series_id in FRED_SERIES.items():
+            try:
+                resp = self.session.get(
+                    base,
+                    params={
+                        "series_id": series_id,
+                        "api_key": cfg.fred_api_key,
+                        "limit": 2,
+                        "sort_order": "desc",
+                        "file_type": "json",
+                    },
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                obs = resp.json().get("observations", [])
+                if obs:
+                    latest = obs[0]
+                    prev = obs[1] if len(obs) > 1 else None
+                    val = latest.get("value", ".")
+                    macro[name] = {
+                        "value": float(val) if val != "." else None,
+                        "date": latest.get("date", ""),
+                        "prev_value": float(prev["value"]) if prev and prev.get("value", ".") != "." else None,
+                    }
+            except Exception as exc:
+                logger.warning("FRED fetch failed for %s: %s", series_id, exc)
+                sources_failed.append(f"fred:{series_id}")
+
+        if macro:
+            sources_used.append("fred")
+        return macro
+
+    # ------------------------------------------------------------------
+    # Finnhub
+    # ------------------------------------------------------------------
+
+    def _fetch_finnhub_news(
+        self, category: str, sources_failed: list
+    ) -> list[dict]:
+        try:
+            resp = self.session.get(
+                "https://finnhub.io/api/v1/news",
+                params={"category": category, "token": cfg.finnhub_api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            items = []
+            for art in resp.json()[:40]:
+                headline = _clean_text(art.get("headline", ""))
+                summary = _clean_text(art.get("summary", ""))
+                if not headline:
+                    continue
+                items.append({
+                    "headline": headline,
+                    "summary": summary[:500],
+                    "url": art.get("url", ""),
+                    "source": f"finnhub:{category}",
+                    "published": datetime.fromtimestamp(
+                        art.get("datetime", 0), tz=timezone.utc
+                    ).isoformat(),
+                    "fingerprint": _fingerprint(headline),
+                })
+            return items
+        except Exception as exc:
+            logger.warning("Finnhub news failed (%s): %s", category, exc)
+            sources_failed.append(f"finnhub:{category}")
+            return []
+
+    def _fetch_finnhub_earnings(
+        self, sources_used: list, sources_failed: list
+    ) -> list[dict]:
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            week_out = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+            resp = self.session.get(
+                "https://finnhub.io/api/v1/calendar/earnings",
+                params={"from": today, "to": week_out, "token": cfg.finnhub_api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            earnings = data.get("earningsCalendar", [])[:30]
+            sources_used.append("finnhub_earnings")
+            return earnings
+        except Exception as exc:
+            logger.warning("Finnhub earnings calendar failed: %s", exc)
+            sources_failed.append("finnhub_earnings")
+            return []
+
+    def _fetch_finnhub_economic_calendar(
+        self, sources_used: list, sources_failed: list
+    ) -> list[dict]:
+        try:
+            resp = self.session.get(
+                "https://finnhub.io/api/v1/calendar/economic",
+                params={"token": cfg.finnhub_api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            events = data.get("economicCalendar", [])[:20]
+            sources_used.append("finnhub_economic_calendar")
+            return events
+        except Exception as exc:
+            logger.warning("Finnhub economic calendar failed: %s", exc)
+            sources_failed.append("finnhub_economic_calendar")
+            return []
+
+    # ------------------------------------------------------------------
+    # NewsAPI
+    # ------------------------------------------------------------------
+
+    def _fetch_newsapi(
+        self, query: str, section: str, sources_failed: list
+    ) -> list[dict]:
+        try:
+            resp = self.session.get(
+                "https://newsapi.org/v2/everything",
+                params={
+                    "q": query,
+                    "language": "en",
+                    "sortBy": "publishedAt",
+                    "pageSize": 15,
+                    "apiKey": cfg.news_api_key,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            articles = resp.json().get("articles", [])
+            items = []
+            for art in articles:
+                headline = _clean_text(art.get("title", ""))
+                summary = _clean_text(art.get("description", ""))
+                if not headline or "[Removed]" in headline:
+                    continue
+                items.append({
+                    "headline": headline,
+                    "summary": summary[:500],
+                    "url": art.get("url", ""),
+                    "source": f"newsapi:{art.get('source', {}).get('name', '')}",
+                    "published": art.get("publishedAt", ""),
+                    "fingerprint": _fingerprint(headline),
+                    "section_hint": section,
+                })
+            return items
+        except Exception as exc:
+            logger.warning("NewsAPI failed for '%s': %s", query, exc)
+            sources_failed.append(f"newsapi:{section}")
+            return []
+
+    # ------------------------------------------------------------------
+    # RSS feeds
     # ------------------------------------------------------------------
 
     def _fetch_rss(
         self, source_key: str, url: str, sources_failed: list
     ) -> list[dict]:
         try:
-            feed = feedparser.parse(url, request_headers={"User-Agent": self.session.headers["User-Agent"]})
-
+            feed = feedparser.parse(
+                url,
+                request_headers={"User-Agent": self.session.headers["User-Agent"]},
+            )
             if feed.bozo and not feed.entries:
                 raise ValueError(f"Feed parse error: {feed.bozo_exception}")
 
             items = []
-            for entry in feed.entries[:30]:
+            for entry in feed.entries[:25]:
                 title = _clean_text(entry.get("title", ""))
-                summary = _clean_text(entry.get("summary", entry.get("description", "")))
-                link = entry.get("link", "")
-                published = _parse_date(entry.get("published", entry.get("updated", "")))
-
+                summary = _clean_text(
+                    entry.get("summary", entry.get("description", ""))
+                )
                 if not title:
                     continue
-
                 items.append({
                     "headline": title,
-                    "summary": summary[:500] if summary else "",
-                    "url": link,
+                    "summary": summary[:500],
+                    "url": entry.get("link", ""),
                     "source": source_key,
-                    "published": published,
+                    "published": _parse_date(
+                        entry.get("published", entry.get("updated", ""))
+                    ),
                     "fingerprint": _fingerprint(title),
                 })
-
             return items
-
         except Exception as exc:
-            logger.warning("RSS fetch failed for %s (%s): %s", source_key, url, exc)
+            logger.warning("RSS failed for %s: %s", source_key, exc)
             sources_failed.append(source_key)
             return []
 
     # ------------------------------------------------------------------
-    # Internal: SEC EDGAR
+    # SEC EDGAR
     # ------------------------------------------------------------------
 
     def _fetch_sec_filings(
         self, sources_used: list, sources_failed: list
     ) -> list[dict]:
         try:
-            url = (
-                "https://efts.sec.gov/LATEST/search-index?"
-                "q=%228-K%22&dateRange=custom"
-                f"&startdt={datetime.now().strftime('%Y-%m-%d')}"
-                f"&enddt={datetime.now().strftime('%Y-%m-%d')}"
-                "&forms=8-K"
-                "&hits.hits._source=period_of_report,entity_name,file_date,form_type"
-                "&hits.hits.total.value=true"
-                "&hits.hits.hits.total.value=true"
+            today = datetime.now().strftime("%Y-%m-%d")
+            resp = self.session.get(
+                "https://efts.sec.gov/LATEST/search-index",
+                params={
+                    "q": "8-K",
+                    "dateRange": "custom",
+                    "startdt": today,
+                    "enddt": today,
+                    "forms": "8-K",
+                },
+                timeout=10,
             )
-            resp = self.session.get(url, timeout=cfg.project_root and 15 or 15)
             resp.raise_for_status()
             data = resp.json()
-
             filings = []
-            for hit in (data.get("hits", {}).get("hits", []) or [])[:20]:
+            for hit in (data.get("hits", {}).get("hits", []) or [])[:15]:
                 src = hit.get("_source", {})
                 filings.append({
                     "entity": src.get("entity_name", "Unknown"),
                     "form_type": src.get("form_type", "8-K"),
                     "file_date": src.get("file_date", ""),
-                    "url": f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company={src.get('entity_name','')}&type=8-K&dateb=&owner=include&count=10",
                 })
-
             sources_used.append("sec_edgar")
             return filings
-
         except Exception as exc:
-            logger.warning("SEC EDGAR fetch failed: %s", exc)
+            logger.warning("SEC EDGAR failed: %s", exc)
             sources_failed.append("sec_edgar")
             return []
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Routing and helpers
 # ---------------------------------------------------------------------------
+
+def _route_to_sections(headlines: list[dict]) -> dict[str, list[dict]]:
+    """Assign each headline to its best-matching section."""
+    sections: dict[str, list[dict]] = {s: [] for s in SECTIONS}
+
+    for item in headlines:
+        # If NewsAPI already tagged it, respect that hint
+        hint = item.get("section_hint")
+        if hint and hint in sections:
+            sections[hint].append(item)
+            continue
+
+        text = (item.get("headline", "") + " " + item.get("summary", "")).lower()
+        best_section = "markets_macro"
+        best_score = 0.0
+
+        for section, keywords in SECTION_KEYWORDS.items():
+            score = sum(1.0 for kw in keywords if kw in text)
+            if score > best_score:
+                best_score = score
+                best_section = section
+
+        sections[best_section].append(item)
+
+    # Sort each section by recency (published date, newest first), cap at 25
+    for section in sections:
+        sections[section] = sorted(
+            sections[section],
+            key=lambda x: x.get("published", ""),
+            reverse=True,
+        )[:25]
+
+    return sections
+
+
+def _earnings_to_headlines(earnings: list[dict]) -> list[dict]:
+    items = []
+    for e in earnings:
+        symbol = e.get("symbol", "")
+        date = e.get("date", "today")
+        eps_est = e.get("epsEstimate")
+        est_str = f" (EPS est: ${eps_est:.2f})" if eps_est else ""
+        headline = f"{symbol} reports earnings {date}{est_str}"
+        items.append({
+            "headline": headline,
+            "summary": f"Earnings release scheduled for {date}. " + (
+                f"Consensus EPS estimate: ${eps_est:.2f}." if eps_est else ""
+            ),
+            "source": "finnhub_earnings",
+            "published": datetime.now(timezone.utc).isoformat(),
+            "fingerprint": _fingerprint(headline),
+        })
+    return items
+
 
 def _clean_text(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"&amp;", "&", text)
-    text = re.sub(r"&lt;", "<", text)
-    text = re.sub(r"&gt;", ">", text)
-    text = re.sub(r"&quot;", '"', text)
+    text = re.sub(r"&amp;", "&", text).replace("&lt;", "<").replace("&gt;", ">")
     text = re.sub(r"&#\d+;", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
@@ -313,8 +631,7 @@ def _parse_date(date_str: str) -> str:
         return datetime.now(timezone.utc).isoformat()
     try:
         import email.utils
-        parsed = email.utils.parsedate_to_datetime(date_str)
-        return parsed.isoformat()
+        return email.utils.parsedate_to_datetime(date_str).isoformat()
     except Exception:
         return date_str
 
@@ -328,38 +645,8 @@ def _deduplicate(items: list[dict]) -> list[dict]:
     seen: set[str] = set()
     unique = []
     for item in items:
-        fp = item.get("fingerprint", _fingerprint(item.get("headline", "")))
+        fp = item.get("fingerprint") or _fingerprint(item.get("headline", ""))
         if fp not in seen:
             seen.add(fp)
             unique.append(item)
     return unique
-
-
-def _score_item(item: dict) -> float:
-    text = (item.get("headline", "") + " " + item.get("summary", "")).lower()
-    score = 0.0
-
-    for category, keywords in CATEGORY_KEYWORDS.items():
-        for kw in keywords:
-            if kw in text:
-                score += 1.0
-
-    # Recency bonus: items from last 4 hours get +5
-    try:
-        pub_str = item.get("published", "")
-        if pub_str:
-            import email.utils
-            pub_tuple = email.utils.parsedate_to_datetime(pub_str)
-            age_hours = (datetime.now(timezone.utc) - pub_tuple).total_seconds() / 3600
-            if age_hours <= 4:
-                score += 5.0
-    except Exception:
-        pass
-
-    return score
-
-
-def _score_and_sort(items: list[dict]) -> list[dict]:
-    for item in items:
-        item["relevance_score"] = _score_item(item)
-    return sorted(items, key=lambda x: x.get("relevance_score", 0), reverse=True)

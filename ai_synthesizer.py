@@ -1,9 +1,9 @@
 """
-AI synthesis module — Google Gemini backend.
+AI synthesis module — multi-call Gemini backend.
 
-Passes collected raw data to the Gemini API and receives structured JSON
-for each section of the morning briefing. Falls back to rule-based compilation
-when the API is unavailable (quota, errors, etc.).
+Makes one Gemini API call per section. Each call receives only the
+headlines relevant to that section, producing a focused narrative +
+structured data bullets rather than a compressed single-call summary.
 """
 
 from __future__ import annotations
@@ -11,60 +11,150 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import google.generativeai as genai
-from tenacity import (
-    retry,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from config import get_config
-from news_aggregator import CATEGORY_KEYWORDS
 
 logger = logging.getLogger(__name__)
 cfg = get_config()
 
-_MODEL_FALLBACKS = (
-    "gemini-2.5-flash",
-    "gemini-2.0-flash-001",
-    "gemini-1.5-flash",
-)
+# ---------------------------------------------------------------------------
+# Section definitions (order controls email layout)
+# ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are the chief markets editor of a premier financial intelligence publication.
-Synthesize the provided headlines into a morning briefing for executives.
+SECTION_CONFIGS: dict[str, dict] = {
+    "markets_macro": {
+        "title": "Markets & Macro",
+        "color": "#0A4A7A",
+        "editorial_focus": (
+            "Cover the dominant market theme, key index moves and their drivers, "
+            "bond market dynamics, currency moves, and any significant technical levels. "
+            "Explain the WHY behind moves — do not simply list what happened."
+        ),
+    },
+    "corporate_earnings": {
+        "title": "Corporate & Earnings",
+        "color": "#1A3A5C",
+        "editorial_focus": (
+            "Lead with the most market-moving earnings report or corporate action. "
+            "Cover: earnings beats/misses with guidance implications, M&A deals and "
+            "strategic rationale, notable analyst calls with price target changes, "
+            "significant executive changes. Connect each item to sector implications."
+        ),
+    },
+    "technology_ai": {
+        "title": "Technology & AI",
+        "color": "#0A3A6A",
+        "editorial_focus": (
+            "Cover AI model releases and competitive dynamics, semiconductor supply "
+            "and demand signals, major funding rounds and their market signals, "
+            "regulatory developments in tech, and hardware/infrastructure buildout. "
+            "Connect technology developments to investment and competitive implications."
+        ),
+    },
+    "healthcare": {
+        "title": "Healthcare",
+        "color": "#0A5A4A",
+        "editorial_focus": (
+            "Cover FDA approvals/rejections and their revenue implications, clinical "
+            "trial results with statistical context, pharma/biotech M&A and pipeline "
+            "deals, insurance and reimbursement policy changes, hospital sector trends. "
+            "Flag anything with near-term stock price implications."
+        ),
+    },
+    "industrials": {
+        "title": "Industrials",
+        "color": "#3A2A6A",
+        "editorial_focus": (
+            "Cover manufacturing data releases (PMI, factory orders, capacity "
+            "utilization), aerospace and defense contract awards, infrastructure "
+            "spending developments, logistics and supply chain conditions, "
+            "union/labor developments at major industrial companies."
+        ),
+    },
+    "energy_commodities": {
+        "title": "Energy & Commodities",
+        "color": "#5A3A0A",
+        "editorial_focus": (
+            "Cover crude oil price action and OPEC+ production decisions, natural "
+            "gas and LNG market dynamics, renewable energy policy and investment, "
+            "metals markets (gold, copper, lithium as leading indicators), and "
+            "agricultural commodities if relevant to inflation narrative."
+        ),
+    },
+    "geopolitical_risk": {
+        "title": "Geopolitical Risk",
+        "color": "#5A0A0A",
+        "editorial_focus": (
+            "Frame every item in terms of direct market, supply chain, or regulatory "
+            "impact. Cover: active conflicts with commodity/trade implications, "
+            "tariff and sanctions developments, election outcomes and policy risk, "
+            "emerging market stress. Do not cover geopolitics without a market angle."
+        ),
+    },
+    "economic_data": {
+        "title": "Economic Data & Fed",
+        "color": "#0A3A2A",
+        "editorial_focus": (
+            "Lead with any data released today (CPI, PCE, jobs, GDP) and its "
+            "implications for Fed policy. Cover Fed communications, rate expectations, "
+            "yield curve dynamics. Use FRED data if provided to ground the narrative "
+            "in actual figures. Distinguish consensus expectations from actual prints."
+        ),
+    },
+    "what_to_watch": {
+        "title": "What to Watch",
+        "color": "#2A0A5A",
+        "editorial_focus": (
+            "List the 4-5 most important catalysts to monitor in the next 24-48 hours. "
+            "Include: scheduled economic releases with consensus estimates, earnings "
+            "reports with key metrics to watch, Fed speakers and their known stances, "
+            "geopolitical developments with binary outcomes. Each item must explain "
+            "WHY it matters and what the bull/bear scenario looks like."
+        ),
+    },
+}
 
-Rules:
-- Tone: executive, direct, zero filler.
-- Return ONLY valid JSON (no markdown).
-- Required keys: top_story, markets_macro, corporate_intelligence, tech_ai_watch,
-  risk_radar, data_points, what_to_watch, sources_used, generation_notes.
-- top_story: {headline, summary, source, url}
-- Section arrays: items with headline, body, source (risk_radar also needs risk_level: high|medium|low).
-- what_to_watch items: headline, timing, context.
-- data_points: metric, value, context.
-- markets_macro: 4-6 items; corporate_intelligence: 4-6; tech_ai_watch: 3-4;
-  risk_radar: 2-3; data_points: 3-5; what_to_watch: exactly 3.
-- Use "[DATA UNAVAILABLE — check source directly]" only when inputs are truly empty."""
+# ---------------------------------------------------------------------------
+# Per-section system prompt template
+# ---------------------------------------------------------------------------
 
-FALLBACK_SYSTEM_PROMPT = """Financial editor. Synthesize headlines into briefing JSON only.
-Keys: top_story, markets_macro, corporate_intelligence, tech_ai_watch, risk_radar,
-data_points, what_to_watch, sources_used, generation_notes. Be concise."""
+SECTION_SYSTEM_PROMPT = """You are a senior editor at a premier financial intelligence publication.
+You are writing the {section_title} section of today's morning briefing.
+
+EDITORIAL FOCUS:
+{editorial_focus}
+
+OUTPUT FORMAT — return ONLY valid JSON, no markdown fences, matching this schema exactly:
+{{
+  "narrative": "2-3 paragraphs of editorial prose. Separate paragraphs with \\n\\n. Write in active voice, executive tone. Each paragraph 4-6 sentences. Synthesize themes — do not list headlines.",
+  "bullets": [
+    {{"label": "Company/Metric/Event", "value": "key number or fact", "note": "one sentence: implication or context"}}
+  ]
+}}
+
+RULES:
+- narrative: minimum 2 paragraphs, minimum 4 sentences each. This is a 15-minute read — be thorough.
+- bullets: 4-6 items. Lead with the most market-relevant data points, specific numbers, ticker symbols.
+- Flag analyst opinions with "(analyst view)" inline.
+- If a headline has no market implication, exclude it.
+- Never fabricate data. If inputs are thin, note it in generation_notes but still write what you can.
+- Return ONLY the JSON object. Nothing else."""
+
+# ---------------------------------------------------------------------------
+# Gemini model fallback chain
+# ---------------------------------------------------------------------------
+
+_MODEL_FALLBACKS = ("gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-1.5-flash")
 
 
-def _is_quota_error(exc: BaseException) -> bool:
+def _is_retryable(exc: BaseException) -> bool:
     err = str(exc).lower()
-    return "429" in err or "quota" in err or "resource_exhausted" in err
-
-
-def _is_retryable_gemini_error(exc: BaseException) -> bool:
-    err = str(exc).lower()
-    return _is_quota_error(exc) or any(
-        x in err for x in ("503", "overloaded", "unavailable", "deadline")
-    )
+    return any(x in err for x in ("503", "overloaded", "unavailable", "deadline", "429", "quota"))
 
 
 # ---------------------------------------------------------------------------
@@ -76,277 +166,245 @@ class AISynthesizer:
         genai.configure(api_key=cfg.google_api_key)
 
     def synthesize(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """Convert raw aggregated data into structured briefing JSON."""
-        user_content = _build_user_message(raw_data)
+        """
+        Run one Gemini call per section. Returns a dict keyed by section name,
+        each containing {title, color, narrative, bullets}.
+        """
+        result: dict[str, Any] = {}
 
-        try:
-            return self._call_api(user_content, system_prompt=SYSTEM_PROMPT)
-        except Exception as exc:
-            logger.warning("Primary synthesis failed (%s). Retrying simplified.", exc)
+        for section_key, section_cfg in SECTION_CONFIGS.items():
+            logger.info("Synthesizing section: %s", section_cfg["title"])
             try:
-                return self._call_api(user_content, system_prompt=FALLBACK_SYSTEM_PROMPT)
-            except Exception as retry_exc:
-                logger.error("Gemini unavailable (%s). Using headline fallback.", retry_exc)
-                return _fallback_briefing_from_headlines(raw_data, str(retry_exc))
+                section_data = self._build_section_input(
+                    section_key, section_cfg, raw_data
+                )
+                output = self._call_section(section_key, section_cfg, section_data)
+                result[section_key] = {
+                    "title": section_cfg["title"],
+                    "color": section_cfg["color"],
+                    "narrative": output.get("narrative", ""),
+                    "bullets": output.get("bullets", []),
+                }
+            except Exception as exc:
+                logger.error("Section %s failed: %s", section_key, exc)
+                result[section_key] = {
+                    "title": section_cfg["title"],
+                    "color": section_cfg["color"],
+                    "narrative": "[DATA UNAVAILABLE — check logs for this section.]",
+                    "bullets": [],
+                }
 
-    def _call_api(self, user_content: str, *, system_prompt: str) -> dict[str, Any]:
-        models_to_try: list[str] = []
-        for name in (cfg.gemini_model, *_MODEL_FALLBACKS):
-            if name and name not in models_to_try:
-                models_to_try.append(name)
+        return result
+
+    # ------------------------------------------------------------------
+    # Input builder
+    # ------------------------------------------------------------------
+
+    def _build_section_input(
+        self,
+        section_key: str,
+        section_cfg: dict,
+        raw_data: dict[str, Any],
+    ) -> str:
+        parts: list[str] = []
+        now = datetime.now().strftime("%A, %B %d, %Y")
+        parts.append(f"DATE: {now}\nSECTION: {section_cfg['title']}\n")
+
+        # Market snapshot for markets/macro section
+        if section_key == "markets_macro":
+            snap = raw_data.get("market_snapshot", {})
+            if snap:
+                parts.append("MARKET PRICES:")
+                for key, data in snap.items():
+                    if data.get("value") is not None:
+                        chg = data.get("change_pct")
+                        chg_str = f"{chg:+.2f}%" if chg is not None else "N/A"
+                        parts.append(
+                            f"  {data['label']}: {_fmt_value(data['value'], data.get('format',''))} "
+                            f"({chg_str}) [{data.get('direction','')}]"
+                        )
+                parts.append("")
+
+        # FRED macro data for economic/markets sections
+        if section_key in ("economic_data", "markets_macro"):
+            macro = raw_data.get("macro_data", {})
+            if macro:
+                parts.append("FRED MACRO DATA (Federal Reserve):")
+                labels = {
+                    "fed_funds_rate": "Fed Funds Rate",
+                    "cpi_yoy": "CPI (latest reading)",
+                    "core_cpi": "Core CPI",
+                    "unemployment": "Unemployment Rate",
+                    "gdp_growth": "GDP",
+                    "yield_spread_10y2y": "10Y-2Y Yield Spread",
+                    "mortgage_30y": "30Y Mortgage Rate",
+                }
+                for key, data in macro.items():
+                    if data.get("value") is not None:
+                        label = labels.get(key, key)
+                        parts.append(
+                            f"  {label}: {data['value']} (as of {data.get('date','')})"
+                        )
+                parts.append("")
+
+        # Earnings calendar for corporate section
+        if section_key in ("corporate_earnings", "what_to_watch"):
+            earnings = raw_data.get("earnings_calendar", [])
+            if earnings:
+                parts.append(f"UPCOMING EARNINGS ({len(earnings)} companies this week):")
+                for e in earnings[:15]:
+                    sym = e.get("symbol", "")
+                    date = e.get("date", "")
+                    eps = e.get("epsEstimate")
+                    eps_str = f" | EPS est: ${eps:.2f}" if eps else ""
+                    parts.append(f"  {sym} — {date}{eps_str}")
+                parts.append("")
+
+        # Economic calendar for forward-looking sections
+        if section_key in ("economic_data", "what_to_watch"):
+            econ_cal = raw_data.get("economic_calendar", [])
+            if econ_cal:
+                parts.append(f"ECONOMIC CALENDAR ({len(econ_cal)} events):")
+                for e in econ_cal[:10]:
+                    event = e.get("event", "")
+                    impact = e.get("impact", "")
+                    actual = e.get("actual", "")
+                    estimate = e.get("estimate", "")
+                    parts.append(
+                        f"  {event} | Impact: {impact} | "
+                        f"Actual: {actual or 'pending'} | Est: {estimate or 'N/A'}"
+                    )
+                parts.append("")
+
+        # SEC filings for corporate section
+        if section_key == "corporate_earnings":
+            filings = raw_data.get("sec_filings", [])
+            if filings:
+                parts.append(f"SEC 8-K FILINGS TODAY ({len(filings)}):")
+                for f in filings[:10]:
+                    parts.append(f"  {f.get('entity','')} — {f.get('form_type','')}")
+                parts.append("")
+
+        # Section-specific headlines
+        sections = raw_data.get("sections", {})
+        headlines = sections.get(section_key, [])
+
+        # what_to_watch gets headlines from all sections
+        if section_key == "what_to_watch":
+            all_headlines = []
+            for s_headlines in sections.values():
+                all_headlines.extend(s_headlines[:5])
+            headlines = all_headlines[:30]
+
+        if headlines:
+            parts.append(f"HEADLINES ({len(headlines)} items):")
+            for i, item in enumerate(headlines[:25], 1):
+                src = item.get("source", "")
+                headline = item.get("headline", "")
+                summary = item.get("summary", "")
+                parts.append(f"{i}. [{src}] {headline}")
+                if summary:
+                    parts.append(f"   {summary[:250]}")
+            parts.append("")
+
+        if not headlines and section_key != "what_to_watch":
+            parts.append(
+                "NOTE: No specific headlines available for this section today. "
+                "Write based on general market context and note limited data availability."
+            )
+
+        return "\n".join(parts)
+
+    # ------------------------------------------------------------------
+    # API call
+    # ------------------------------------------------------------------
+
+    def _call_section(
+        self, section_key: str, section_cfg: dict, user_content: str
+    ) -> dict[str, Any]:
+        system_prompt = SECTION_SYSTEM_PROMPT.format(
+            section_title=section_cfg["title"],
+            editorial_focus=section_cfg["editorial_focus"],
+        )
+
+        models_to_try = []
+        for m in (cfg.gemini_model, *_MODEL_FALLBACKS):
+            if m and m not in models_to_try:
+                models_to_try.append(m)
 
         last_exc: Exception | None = None
         for model_name in models_to_try:
             try:
-                return self._generate_with_model(
-                    model_name, user_content, system_prompt=system_prompt
-                )
+                return self._generate(model_name, system_prompt, user_content)
             except Exception as exc:
                 last_exc = exc
-                if _is_quota_error(exc):
-                    logger.error("Gemini quota exceeded — skipping further models.")
-                    raise
                 err = str(exc).lower()
-                retryable = (
-                    "404" in err
-                    or "not found" in err
-                    or "no longer available" in err
-                    or "json" in err
-                    or "no text" in err
-                    or "blocked" in err
-                )
-                if retryable:
-                    logger.warning("Model %s failed (%s). Trying next.", model_name, exc)
+                if any(x in err for x in ("404", "not found", "no longer available")):
+                    logger.warning("Model %s not available, trying next.", model_name)
                     continue
                 raise
 
         raise last_exc or RuntimeError("No Gemini models available")
 
     @retry(
-        retry=retry_if_exception(_is_retryable_gemini_error),
+        retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=20, max=60),
+        wait=wait_exponential(multiplier=1, min=15, max=60),
         reraise=True,
     )
-    def _generate_with_model(
-        self, model_name: str, user_content: str, *, system_prompt: str
+    def _generate(
+        self, model_name: str, system_prompt: str, user_content: str
     ) -> dict[str, Any]:
         model = genai.GenerativeModel(
             model_name=model_name,
             system_instruction=system_prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
-                temperature=0.2,
-                max_output_tokens=2048,
+                temperature=0.3,
+                max_output_tokens=16384,
             ),
         )
 
         response = model.generate_content(user_content)
-        raw_text = _extract_response_text(response)
+
+        try:
+            raw_text = response.text.strip()
+        except (ValueError, AttributeError) as exc:
+            raise RuntimeError(f"Gemini returned no text: {exc}") from exc
 
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
             raw_text = re.sub(r"\n?```$", "", raw_text)
 
-        briefing = json.loads(raw_text)
-        return _normalize_briefing(briefing)
+        result = json.loads(raw_text)
+
+        # Normalise bullets
+        bullets = result.get("bullets", [])
+        if isinstance(bullets, dict):
+            bullets = [bullets]
+        result["bullets"] = bullets
+
+        logger.info(
+            "  %s — %s tokens in / %s tokens out",
+            model_name,
+            getattr(response.usage_metadata, "prompt_token_count", "?"),
+            getattr(response.usage_metadata, "candidates_token_count", "?"),
+        )
+
+        return result
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _extract_response_text(response: Any) -> str:
-    try:
-        text = response.text
-    except (ValueError, AttributeError) as exc:
-        raise RuntimeError(f"Gemini returned no text: {exc}") from exc
-
-    if not text or not str(text).strip():
-        raise RuntimeError("Gemini returned empty response text")
-    return str(text).strip()
-
-
-def _as_list(value: Any) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, dict):
-        return [value]
-    return []
-
-
-def _normalize_briefing(raw: Any) -> dict[str, Any]:
-    if not isinstance(raw, dict):
-        return _fallback_briefing_from_headlines(
-            {"headlines": []}, f"Invalid briefing type: {type(raw).__name__}"
-        )
-
-    top = raw.get("top_story")
-    if not isinstance(top, dict):
-        top = {
-            "headline": str(top) if top else "[DATA UNAVAILABLE]",
-            "summary": "",
-            "source": "N/A",
-            "url": None,
-        }
-
-    return {
-        "top_story": top,
-        "markets_macro": _as_list(raw.get("markets_macro")),
-        "corporate_intelligence": _as_list(raw.get("corporate_intelligence")),
-        "tech_ai_watch": _as_list(raw.get("tech_ai_watch")),
-        "risk_radar": _as_list(raw.get("risk_radar")),
-        "data_points": _as_list(raw.get("data_points")),
-        "what_to_watch": _as_list(raw.get("what_to_watch")),
-        "sources_used": _as_list(raw.get("sources_used")),
-        "generation_notes": str(raw.get("generation_notes", "")),
-    }
-
-
-def _build_user_message(raw_data: dict[str, Any]) -> str:
-    parts: list[str] = []
-    now = datetime.now().strftime("%A, %B %d, %Y")
-    parts.append(f"DATE: {now}\n")
-
-    snapshot = raw_data.get("market_snapshot", {})
-    if snapshot:
-        parts.append("=== MARKET SNAPSHOT ===")
-        for key, data in snapshot.items():
-            if data.get("value") is not None:
-                val = data["value"]
-                chg = data.get("change_pct")
-                label = data.get("label", key)
-                chg_str = f"{chg:+.2f}%" if chg is not None else "N/A"
-                parts.append(f"  {label}: {_format_value(val, data.get('format', ''))} ({chg_str})")
-        parts.append("")
-
-    headlines = raw_data.get("headlines", [])
-    if headlines:
-        parts.append(f"=== HEADLINES ({len(headlines)} items) ===")
-        for i, item in enumerate(headlines[:20], 1):
-            src = item.get("source", "")
-            headline = item.get("headline", "")
-            summary = item.get("summary", "")
-            parts.append(f"{i}. [{src}] {headline}")
-            if summary:
-                parts.append(f"   {summary[:200]}")
-        parts.append("")
-
-    parts.append("Return JSON briefing for today's date. Focus on market-moving items.")
-    return "\n".join(parts)
-
-
-def _format_value(value: float, fmt: str) -> str:
+def _fmt_value(value: float, fmt: str) -> str:
     if fmt == "yield":
         return f"{value:.2f}%"
-    if fmt == "price":
+    elif fmt == "price":
         return f"${value:,.2f}"
-    if fmt == "crypto":
+    elif fmt == "crypto":
         return f"${value:,.0f}"
+    elif fmt == "fx":
+        return f"{value:.4f}"
     return f"{value:,.2f}"
-
-
-def _categorize_headline(item: dict) -> str:
-    text = (item.get("headline", "") + " " + item.get("summary", "")).lower()
-    scores = {
-        cat: sum(1 for kw in keywords if kw in text)
-        for cat, keywords in CATEGORY_KEYWORDS.items()
-    }
-    best = max(scores, key=scores.get)
-    return best if scores[best] > 0 else "markets_macro"
-
-
-def _item_from_headline(item: dict, *, risk: bool = False) -> dict[str, Any]:
-    body = item.get("summary", "").strip() or "See source for full coverage."
-    entry: dict[str, Any] = {
-        "headline": item.get("headline", "Untitled"),
-        "body": body[:400],
-        "source": item.get("source", "N/A"),
-    }
-    if risk:
-        entry["risk_level"] = "medium"
-    return entry
-
-
-def _fallback_briefing_from_headlines(
-    raw_data: dict[str, Any], error_msg: str
-) -> dict[str, Any]:
-    """Build a readable briefing from RSS headlines when Gemini is unavailable."""
-    headlines: list[dict] = list(raw_data.get("headlines") or [])
-    buckets: dict[str, list[dict]] = {
-        "markets_macro": [],
-        "corporate_intelligence": [],
-        "tech_ai_watch": [],
-        "risk_radar": [],
-    }
-
-    for item in headlines:
-        cat = _categorize_headline(item)
-        if len(buckets[cat]) < 6:
-            buckets[cat].append(_item_from_headline(item, risk=(cat == "risk_radar")))
-
-    if not headlines:
-        return _empty_briefing(error_msg)
-
-    top_item = headlines[0]
-    top_story = {
-        "headline": top_item.get("headline", "Morning markets update"),
-        "summary": (top_item.get("summary") or top_item.get("headline", ""))[:500],
-        "source": top_item.get("source", "N/A"),
-        "url": top_item.get("url"),
-    }
-
-    def _fill(key: str, n: int) -> list[dict]:
-        items = buckets[key]
-        if items:
-            return items[:n]
-        return [_item_from_headline(h) for h in headlines[:n]]
-
-    sources_used = sorted({h.get("source", "") for h in headlines if h.get("source")})
-
-    note = (
-        "AI synthesis unavailable (Gemini API quota or error). "
-        "Briefing compiled automatically from headlines. "
-        f"Details: {error_msg[:180]}"
-    )
-
-    return {
-        "top_story": top_story,
-        "markets_macro": _fill("markets_macro", 5),
-        "corporate_intelligence": _fill("corporate_intelligence", 5),
-        "tech_ai_watch": _fill("tech_ai_watch", 4),
-        "risk_radar": _fill("risk_radar", 3),
-        "data_points": [
-            {
-                "metric": "Headlines collected",
-                "value": str(len(headlines)),
-                "context": "Live RSS aggregation succeeded; enable Gemini billing for AI summaries.",
-            }
-        ],
-        "what_to_watch": [
-            {
-                "headline": h.get("headline", "Key development"),
-                "timing": "Today",
-                "context": (h.get("summary") or "")[:200] or "Monitor for updates.",
-            }
-            for h in headlines[1:4]
-        ],
-        "sources_used": sources_used,
-        "generation_notes": note,
-    }
-
-
-def _empty_briefing(error_msg: str) -> dict[str, Any]:
-    msg = f"No headlines available. {error_msg[:200]}"
-    stub = {"headline": msg, "body": msg, "source": "N/A"}
-    return {
-        "top_story": {"headline": msg, "summary": msg, "source": "N/A", "url": None},
-        "markets_macro": [stub],
-        "corporate_intelligence": [],
-        "tech_ai_watch": [],
-        "risk_radar": [],
-        "data_points": [],
-        "what_to_watch": [],
-        "sources_used": [],
-        "generation_notes": msg,
-    }

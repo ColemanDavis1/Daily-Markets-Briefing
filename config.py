@@ -62,6 +62,17 @@ class Config:
         default_factory=lambda: os.getenv("SMTP_PASSWORD", "")
     )
 
+    # News APIs (all optional — pipeline degrades gracefully without them)
+    finnhub_api_key: str = field(
+        default_factory=lambda: os.getenv("FINNHUB_API_KEY", "")
+    )
+    fred_api_key: str = field(
+        default_factory=lambda: os.getenv("FRED_API_KEY", "")
+    )
+    news_api_key: str = field(
+        default_factory=lambda: os.getenv("NEWS_API_KEY", "")
+    )
+
     # Optional
     unsubscribe_url: str = field(
         default_factory=lambda: os.getenv(
