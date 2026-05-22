@@ -81,6 +81,12 @@ def run_pipeline(dry_run: bool = False) -> dict:
             k for k in briefing
             if k not in ("sources_used", "generation_notes")
         ]
+        notes = briefing.get("generation_notes", "")
+        if "AI synthesis unavailable" in notes:
+            run_log["synthesis_mode"] = "headline_fallback"
+            logger.warning("  Gemini unavailable — used headline fallback. %s", notes[:200])
+        else:
+            run_log["synthesis_mode"] = "gemini"
         logger.info("  Sections generated: %s", ", ".join(run_log["sections_generated"]))
 
         # ---- Step 3: Render ----

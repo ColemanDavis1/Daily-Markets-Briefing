@@ -2,8 +2,8 @@
 AI synthesis module — Google Gemini backend.
 
 Passes collected raw data to the Gemini API and receives structured JSON
-for each section of the morning briefing. Uses response_mime_type="application/json"
-to enforce clean JSON output natively.
+for each section of the morning briefing. Falls back to rule-based compilation
+when the API is unavailable (quota, errors, etc.).
 """
 
 from __future__ import annotations
@@ -15,100 +15,56 @@ from datetime import datetime, timezone
 from typing import Any
 
 import google.generativeai as genai
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from config import get_config
+from news_aggregator import CATEGORY_KEYWORDS
 
 logger = logging.getLogger(__name__)
 cfg = get_config()
 
-# Primary model from config; fallbacks if Google returns 404 (e.g. deprecated gemini-2.0-flash)
 _MODEL_FALLBACKS = (
     "gemini-2.5-flash",
-    "gemini-2.5-flash-latest",
     "gemini-2.0-flash-001",
     "gemini-1.5-flash",
 )
 
-# ---------------------------------------------------------------------------
-# Output JSON schema (injected into the system prompt)
-# ---------------------------------------------------------------------------
+SYSTEM_PROMPT = """You are the chief markets editor of a premier financial intelligence publication.
+Synthesize the provided headlines into a morning briefing for executives.
 
-OUTPUT_SCHEMA = {
-    "top_story": {
-        "headline": "string",
-        "summary": "3-4 sentences. Executive tone. Lead with impact.",
-        "source": "string",
-        "url": "string or null",
-    },
-    "markets_macro": [
-        {
-            "headline": "string",
-            "body": "2-3 sentences. Lead with key fact, follow with market implication.",
-            "source": "string",
-        }
-    ],
-    "corporate_intelligence": [
-        {"headline": "string", "body": "2-3 sentences.", "source": "string"}
-    ],
-    "tech_ai_watch": [
-        {"headline": "string", "body": "2-3 sentences.", "source": "string"}
-    ],
-    "risk_radar": [
-        {
-            "headline": "string",
-            "body": "2-3 sentences.",
-            "risk_level": "high | medium | low",
-            "source": "string",
-        }
-    ],
-    "data_points": [
-        {
-            "metric": "string",
-            "value": "string",
-            "context": "1 sentence explaining significance.",
-        }
-    ],
-    "what_to_watch": [
-        {
-            "headline": "string",
-            "timing": "string e.g. 'Today 2:00 PM ET'",
-            "context": "1-2 sentences on why it matters.",
-        }
-    ],
-    "sources_used": ["array of source names cited"],
-    "generation_notes": "string — note any data gaps or caveats",
-}
+Rules:
+- Tone: executive, direct, zero filler.
+- Return ONLY valid JSON (no markdown).
+- Required keys: top_story, markets_macro, corporate_intelligence, tech_ai_watch,
+  risk_radar, data_points, what_to_watch, sources_used, generation_notes.
+- top_story: {headline, summary, source, url}
+- Section arrays: items with headline, body, source (risk_radar also needs risk_level: high|medium|low).
+- what_to_watch items: headline, timing, context.
+- data_points: metric, value, context.
+- markets_macro: 4-6 items; corporate_intelligence: 4-6; tech_ai_watch: 3-4;
+  risk_radar: 2-3; data_points: 3-5; what_to_watch: exactly 3.
+- Use "[DATA UNAVAILABLE — check source directly]" only when inputs are truly empty."""
 
-SYSTEM_PROMPT = f"""You are the chief markets editor of a premier financial intelligence publication.
-Your task: synthesize raw news headlines and summaries into a structured morning briefing for
-C-suite executives, institutional investors, and senior risk officers.
+FALLBACK_SYSTEM_PROMPT = """Financial editor. Synthesize headlines into briefing JSON only.
+Keys: top_story, markets_macro, corporate_intelligence, tech_ai_watch, risk_radar,
+data_points, what_to_watch, sources_used, generation_notes. Be concise."""
 
-EDITORIAL STANDARDS:
-- Tone: executive, direct, zero filler. Every sentence must carry information.
-- Lead each bullet with the key fact, then the market or business implication.
-- Distinguish reported facts from analyst opinions — flag opinions with "(analyst view)" inline.
-- If data is unavailable for a section, output the placeholder string:
-  "[DATA UNAVAILABLE — check source directly]" rather than fabricating content.
-- Prioritize items with direct market-moving potential.
-- top_story summary: max 4 sentences. All body fields: max 3 sentences.
 
-OUTPUT: Return ONLY valid JSON matching this exact schema:
+def _is_quota_error(exc: BaseException) -> bool:
+    err = str(exc).lower()
+    return "429" in err or "quota" in err or "resource_exhausted" in err
 
-{json.dumps(OUTPUT_SCHEMA, indent=2)}
 
-COUNT TARGETS:
-- markets_macro: 4-6 items
-- corporate_intelligence: 4-6 items
-- tech_ai_watch: 3-4 items
-- risk_radar: 2-3 items
-- data_points: 3-5 items
-- what_to_watch: exactly 3 items"""
-
-FALLBACK_SYSTEM_PROMPT = """You are a financial editor. Synthesize the provided headlines into a morning
-briefing. Return ONLY valid JSON with these top-level keys: top_story, markets_macro,
-corporate_intelligence, tech_ai_watch, risk_radar, data_points, what_to_watch,
-sources_used, generation_notes. Keep all text concise. Use placeholder strings for missing data."""
+def _is_retryable_gemini_error(exc: BaseException) -> bool:
+    err = str(exc).lower()
+    return _is_quota_error(exc) or any(
+        x in err for x in ("503", "overloaded", "unavailable", "deadline")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -120,21 +76,18 @@ class AISynthesizer:
         genai.configure(api_key=cfg.google_api_key)
 
     def synthesize(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """
-        Convert raw aggregated data into structured briefing JSON.
-        Retries once with a simplified prompt on failure.
-        """
+        """Convert raw aggregated data into structured briefing JSON."""
         user_content = _build_user_message(raw_data)
 
         try:
             return self._call_api(user_content, system_prompt=SYSTEM_PROMPT)
         except Exception as exc:
-            logger.warning("Primary synthesis failed (%s). Retrying with simplified prompt.", exc)
+            logger.warning("Primary synthesis failed (%s). Retrying simplified.", exc)
             try:
                 return self._call_api(user_content, system_prompt=FALLBACK_SYSTEM_PROMPT)
             except Exception as retry_exc:
-                logger.error("Synthesis retry also failed: %s", retry_exc)
-                return _placeholder_briefing(str(retry_exc))
+                logger.error("Gemini unavailable (%s). Using headline fallback.", retry_exc)
+                return _fallback_briefing_from_headlines(raw_data, str(retry_exc))
 
     def _call_api(self, user_content: str, *, system_prompt: str) -> dict[str, Any]:
         models_to_try: list[str] = []
@@ -150,6 +103,9 @@ class AISynthesizer:
                 )
             except Exception as exc:
                 last_exc = exc
+                if _is_quota_error(exc):
+                    logger.error("Gemini quota exceeded — skipping further models.")
+                    raise
                 err = str(exc).lower()
                 retryable = (
                     "404" in err
@@ -158,7 +114,6 @@ class AISynthesizer:
                     or "json" in err
                     or "no text" in err
                     or "blocked" in err
-                    or "candidate" in err
                 )
                 if retryable:
                     logger.warning("Model %s failed (%s). Trying next.", model_name, exc)
@@ -167,6 +122,12 @@ class AISynthesizer:
 
         raise last_exc or RuntimeError("No Gemini models available")
 
+    @retry(
+        retry=retry_if_exception(_is_retryable_gemini_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=20, max=60),
+        reraise=True,
+    )
     def _generate_with_model(
         self, model_name: str, user_content: str, *, system_prompt: str
     ) -> dict[str, Any]:
@@ -176,7 +137,7 @@ class AISynthesizer:
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.2,
-                max_output_tokens=4096,
+                max_output_tokens=2048,
             ),
         )
 
@@ -188,16 +149,7 @@ class AISynthesizer:
             raw_text = re.sub(r"\n?```$", "", raw_text)
 
         briefing = json.loads(raw_text)
-        briefing = _normalize_briefing(briefing)
-
-        logger.info(
-            "Synthesis complete via %s. Input tokens: %s, Output tokens: %s",
-            model_name,
-            getattr(response.usage_metadata, "prompt_token_count", "N/A"),
-            getattr(response.usage_metadata, "candidates_token_count", "N/A"),
-        )
-
-        return briefing
+        return _normalize_briefing(briefing)
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +157,6 @@ class AISynthesizer:
 # ---------------------------------------------------------------------------
 
 def _extract_response_text(response: Any) -> str:
-    """Read Gemini text safely; raises RuntimeError if empty or blocked."""
     try:
         text = response.text
     except (ValueError, AttributeError) as exc:
@@ -225,9 +176,10 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _normalize_briefing(raw: Any) -> dict[str, Any]:
-    """Coerce Gemini JSON into the shape expected by the email template."""
     if not isinstance(raw, dict):
-        return _placeholder_briefing(f"Invalid briefing type: {type(raw).__name__}")
+        return _fallback_briefing_from_headlines(
+            {"headlines": []}, f"Invalid briefing type: {type(raw).__name__}"
+        )
 
     top = raw.get("top_story")
     if not isinstance(top, dict):
@@ -258,80 +210,143 @@ def _build_user_message(raw_data: dict[str, Any]) -> str:
 
     snapshot = raw_data.get("market_snapshot", {})
     if snapshot:
-        parts.append("=== MARKET SNAPSHOT (pre-market/overnight) ===")
+        parts.append("=== MARKET SNAPSHOT ===")
         for key, data in snapshot.items():
             if data.get("value") is not None:
                 val = data["value"]
                 chg = data.get("change_pct")
                 label = data.get("label", key)
-                direction = data.get("direction", "")
                 chg_str = f"{chg:+.2f}%" if chg is not None else "N/A"
-                parts.append(
-                    f"  {label}: {_format_value(val, data.get('format', ''))} "
-                    f"({chg_str}) [{direction}]"
-                )
+                parts.append(f"  {label}: {_format_value(val, data.get('format', ''))} ({chg_str})")
         parts.append("")
 
     headlines = raw_data.get("headlines", [])
     if headlines:
-        parts.append(f"=== RAW HEADLINES ({len(headlines)} items, sorted by relevance) ===")
-        for i, item in enumerate(headlines[:60], 1):
+        parts.append(f"=== HEADLINES ({len(headlines)} items) ===")
+        for i, item in enumerate(headlines[:20], 1):
             src = item.get("source", "")
             headline = item.get("headline", "")
             summary = item.get("summary", "")
             parts.append(f"{i}. [{src}] {headline}")
             if summary:
-                parts.append(f"   Summary: {summary[:300]}")
+                parts.append(f"   {summary[:200]}")
         parts.append("")
 
-    filings = raw_data.get("sec_filings", [])
-    if filings:
-        parts.append(f"=== SEC EDGAR FILINGS (today, {len(filings)} items) ===")
-        for f in filings[:10]:
-            parts.append(
-                f"  {f.get('entity', '')} — {f.get('form_type', '')} "
-                f"filed {f.get('file_date', '')}"
-            )
-        parts.append("")
-
-    parts.append(
-        "Synthesize the above into the required JSON briefing. "
-        f"Today's date: {now}. "
-        "Focus on items with the highest market-moving or strategic significance."
-    )
-
+    parts.append("Return JSON briefing for today's date. Focus on market-moving items.")
     return "\n".join(parts)
 
 
 def _format_value(value: float, fmt: str) -> str:
     if fmt == "yield":
         return f"{value:.2f}%"
-    elif fmt == "price":
+    if fmt == "price":
         return f"${value:,.2f}"
-    elif fmt == "crypto":
+    if fmt == "crypto":
         return f"${value:,.0f}"
     return f"{value:,.2f}"
 
 
-def _placeholder_briefing(error_msg: str) -> dict[str, Any]:
-    placeholder = "[DATA UNAVAILABLE — synthesis pipeline failed. Check logs.]"
+def _categorize_headline(item: dict) -> str:
+    text = (item.get("headline", "") + " " + item.get("summary", "")).lower()
+    scores = {
+        cat: sum(1 for kw in keywords if kw in text)
+        for cat, keywords in CATEGORY_KEYWORDS.items()
+    }
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "markets_macro"
+
+
+def _item_from_headline(item: dict, *, risk: bool = False) -> dict[str, Any]:
+    body = item.get("summary", "").strip() or "See source for full coverage."
+    entry: dict[str, Any] = {
+        "headline": item.get("headline", "Untitled"),
+        "body": body[:400],
+        "source": item.get("source", "N/A"),
+    }
+    if risk:
+        entry["risk_level"] = "medium"
+    return entry
+
+
+def _fallback_briefing_from_headlines(
+    raw_data: dict[str, Any], error_msg: str
+) -> dict[str, Any]:
+    """Build a readable briefing from RSS headlines when Gemini is unavailable."""
+    headlines: list[dict] = list(raw_data.get("headlines") or [])
+    buckets: dict[str, list[dict]] = {
+        "markets_macro": [],
+        "corporate_intelligence": [],
+        "tech_ai_watch": [],
+        "risk_radar": [],
+    }
+
+    for item in headlines:
+        cat = _categorize_headline(item)
+        if len(buckets[cat]) < 6:
+            buckets[cat].append(_item_from_headline(item, risk=(cat == "risk_radar")))
+
+    if not headlines:
+        return _empty_briefing(error_msg)
+
+    top_item = headlines[0]
+    top_story = {
+        "headline": top_item.get("headline", "Morning markets update"),
+        "summary": (top_item.get("summary") or top_item.get("headline", ""))[:500],
+        "source": top_item.get("source", "N/A"),
+        "url": top_item.get("url"),
+    }
+
+    def _fill(key: str, n: int) -> list[dict]:
+        items = buckets[key]
+        if items:
+            return items[:n]
+        return [_item_from_headline(h) for h in headlines[:n]]
+
+    sources_used = sorted({h.get("source", "") for h in headlines if h.get("source")})
+
+    note = (
+        "AI synthesis unavailable (Gemini API quota or error). "
+        "Briefing compiled automatically from headlines. "
+        f"Details: {error_msg[:180]}"
+    )
+
     return {
-        "top_story": {
-            "headline": placeholder,
-            "summary": placeholder,
-            "source": "N/A",
-            "url": None,
-        },
-        "markets_macro": [{"headline": placeholder, "body": placeholder, "source": "N/A"}],
-        "corporate_intelligence": [{"headline": placeholder, "body": placeholder, "source": "N/A"}],
-        "tech_ai_watch": [{"headline": placeholder, "body": placeholder, "source": "N/A"}],
-        "risk_radar": [
-            {"headline": placeholder, "body": placeholder, "risk_level": "medium", "source": "N/A"}
+        "top_story": top_story,
+        "markets_macro": _fill("markets_macro", 5),
+        "corporate_intelligence": _fill("corporate_intelligence", 5),
+        "tech_ai_watch": _fill("tech_ai_watch", 4),
+        "risk_radar": _fill("risk_radar", 3),
+        "data_points": [
+            {
+                "metric": "Headlines collected",
+                "value": str(len(headlines)),
+                "context": "Live RSS aggregation succeeded; enable Gemini billing for AI summaries.",
+            }
         ],
-        "data_points": [{"metric": "Pipeline Error", "value": "N/A", "context": error_msg[:200]}],
         "what_to_watch": [
-            {"headline": placeholder, "timing": "N/A", "context": placeholder}
+            {
+                "headline": h.get("headline", "Key development"),
+                "timing": "Today",
+                "context": (h.get("summary") or "")[:200] or "Monitor for updates.",
+            }
+            for h in headlines[1:4]
         ],
+        "sources_used": sources_used,
+        "generation_notes": note,
+    }
+
+
+def _empty_briefing(error_msg: str) -> dict[str, Any]:
+    msg = f"No headlines available. {error_msg[:200]}"
+    stub = {"headline": msg, "body": msg, "source": "N/A"}
+    return {
+        "top_story": {"headline": msg, "summary": msg, "source": "N/A", "url": None},
+        "markets_macro": [stub],
+        "corporate_intelligence": [],
+        "tech_ai_watch": [],
+        "risk_radar": [],
+        "data_points": [],
+        "what_to_watch": [],
         "sources_used": [],
-        "generation_notes": f"Synthesis failed: {error_msg}",
+        "generation_notes": msg,
     }
