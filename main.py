@@ -106,7 +106,12 @@ def run_pipeline(dry_run: bool = False) -> dict:
         sender = EmailSender()
         delivery = sender.send(html_content=html, subject=subject)
         run_log["delivery"] = delivery
-        run_log["status"] = "success" if delivery.get("success") else "delivery_failed"
+        if not delivery.get("success"):
+            run_log["status"] = "delivery_failed"
+            run_log["error"] = delivery.get("error", "Email delivery failed")
+            _append_log(run_log)
+            raise RuntimeError(run_log["error"])
+        run_log["status"] = "success"
         logger.info("  Delivery result: %s", delivery)
 
     except Exception as exc:

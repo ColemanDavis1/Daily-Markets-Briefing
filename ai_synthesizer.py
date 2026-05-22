@@ -151,8 +151,17 @@ class AISynthesizer:
             except Exception as exc:
                 last_exc = exc
                 err = str(exc).lower()
-                if "404" in err or "not found" in err or "no longer available" in err:
-                    logger.warning("Model %s unavailable (%s). Trying next.", model_name, exc)
+                retryable = (
+                    "404" in err
+                    or "not found" in err
+                    or "no longer available" in err
+                    or "json" in err
+                    or "no text" in err
+                    or "blocked" in err
+                    or "candidate" in err
+                )
+                if retryable:
+                    logger.warning("Model %s failed (%s). Trying next.", model_name, exc)
                     continue
                 raise
 
@@ -172,13 +181,14 @@ class AISynthesizer:
         )
 
         response = model.generate_content(user_content)
-        raw_text = response.text.strip()
+        raw_text = _extract_response_text(response)
 
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
             raw_text = re.sub(r"\n?```$", "", raw_text)
 
         briefing = json.loads(raw_text)
+        briefing = _normalize_briefing(briefing)
 
         logger.info(
             "Synthesis complete via %s. Input tokens: %s, Output tokens: %s",
@@ -193,6 +203,53 @@ class AISynthesizer:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _extract_response_text(response: Any) -> str:
+    """Read Gemini text safely; raises RuntimeError if empty or blocked."""
+    try:
+        text = response.text
+    except (ValueError, AttributeError) as exc:
+        raise RuntimeError(f"Gemini returned no text: {exc}") from exc
+
+    if not text or not str(text).strip():
+        raise RuntimeError("Gemini returned empty response text")
+    return str(text).strip()
+
+
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
+def _normalize_briefing(raw: Any) -> dict[str, Any]:
+    """Coerce Gemini JSON into the shape expected by the email template."""
+    if not isinstance(raw, dict):
+        return _placeholder_briefing(f"Invalid briefing type: {type(raw).__name__}")
+
+    top = raw.get("top_story")
+    if not isinstance(top, dict):
+        top = {
+            "headline": str(top) if top else "[DATA UNAVAILABLE]",
+            "summary": "",
+            "source": "N/A",
+            "url": None,
+        }
+
+    return {
+        "top_story": top,
+        "markets_macro": _as_list(raw.get("markets_macro")),
+        "corporate_intelligence": _as_list(raw.get("corporate_intelligence")),
+        "tech_ai_watch": _as_list(raw.get("tech_ai_watch")),
+        "risk_radar": _as_list(raw.get("risk_radar")),
+        "data_points": _as_list(raw.get("data_points")),
+        "what_to_watch": _as_list(raw.get("what_to_watch")),
+        "sources_used": _as_list(raw.get("sources_used")),
+        "generation_notes": str(raw.get("generation_notes", "")),
+    }
+
 
 def _build_user_message(raw_data: dict[str, Any]) -> str:
     parts: list[str] = []

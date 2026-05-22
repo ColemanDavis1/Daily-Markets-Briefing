@@ -80,14 +80,28 @@ def _build_context(
 
     # Build preheader from top story
     top = briefing.get("top_story", {})
+    if not isinstance(top, dict):
+        top = {}
+
     preheader = top.get("headline", "Your morning financial intelligence briefing.")
-    if top.get("summary"):
-        preheader = top["summary"][:120]
+    summary = top.get("summary")
+    if summary:
+        preheader = str(summary)[:120]
 
     # Sources cited
-    sources_used: list[str] = briefing.get("sources_used", [])
+    sources_used = briefing.get("sources_used", [])
+    if not isinstance(sources_used, list):
+        sources_used = []
     if not sources_used:
         sources_used = ["Reuters", "CNBC", "MarketWatch", "Yahoo Finance", "SEC EDGAR"]
+
+    def _section_list(key: str) -> list:
+        val = briefing.get(key, [])
+        if isinstance(val, list):
+            return val
+        if isinstance(val, dict):
+            return [val]
+        return []
 
     return {
         "date_long": date_long,
@@ -100,14 +114,14 @@ def _build_context(
         "market_snapshot": market_snapshot,
         # Synthesized sections (with safe fallbacks for all keys)
         "top_story": top,
-        "markets_macro": briefing.get("markets_macro", []),
-        "corporate_intelligence": briefing.get("corporate_intelligence", []),
-        "tech_ai_watch": briefing.get("tech_ai_watch", []),
-        "risk_radar": briefing.get("risk_radar", []),
-        "data_points": briefing.get("data_points", []),
-        "what_to_watch": briefing.get("what_to_watch", []),
+        "markets_macro": _section_list("markets_macro"),
+        "corporate_intelligence": _section_list("corporate_intelligence"),
+        "tech_ai_watch": _section_list("tech_ai_watch"),
+        "risk_radar": _section_list("risk_radar"),
+        "data_points": _section_list("data_points"),
+        "what_to_watch": _section_list("what_to_watch"),
         "sources_used": sources_used,
-        "generation_notes": briefing.get("generation_notes", ""),
+        "generation_notes": str(briefing.get("generation_notes", "")),
     }
 
 
