@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -33,7 +34,7 @@ class EmailRenderer:
         briefing: dict[str, Any],
     ) -> str:
         template = self.env.get_template("briefing.html")
-        context = _build_context(datetime.now(), market_snapshot, briefing)
+        context = _build_context(datetime.now(ZoneInfo("America/New_York")), market_snapshot, briefing)
         html = template.render(**context)
         logger.info("Email rendered (%d characters).", len(html))
         return html

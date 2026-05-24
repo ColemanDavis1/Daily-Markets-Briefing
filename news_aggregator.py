@@ -277,9 +277,14 @@ class NewsAggregator:
         snapshot: dict[str, Any] = {}
         any_success = False
 
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=14)
+        d1 = start_date.strftime("%Y%m%d")
+        d2 = end_date.strftime("%Y%m%d")
+
         for key, (stooq_sym, label, fmt) in MARKET_TICKERS.items():
             try:
-                url = f"https://stooq.com/q/d/l/?s={stooq_sym}&i=d"
+                url = f"https://stooq.com/q/d/l/?s={stooq_sym}&d1={d1}&d2={d2}&i=d"
                 resp = self.session.get(url, timeout=10)
                 resp.raise_for_status()
 
