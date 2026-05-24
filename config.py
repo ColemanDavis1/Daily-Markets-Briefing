@@ -30,6 +30,13 @@ class Config:
     gemini_model: str = field(
         default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     )
+    verify_sections: bool = field(
+        default_factory=lambda: os.getenv("VERIFY_SECTIONS", "false").lower()
+        in ("1", "true", "yes")
+    )
+    gemini_section_delay_sec: float = field(
+        default_factory=lambda: float(os.getenv("GEMINI_SECTION_DELAY_SEC", "4"))
+    )
     sendgrid_api_key: str = field(
         default_factory=lambda: os.getenv("SENDGRID_API_KEY", "")
     )

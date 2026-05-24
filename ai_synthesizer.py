@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from typing import Any
 
@@ -192,29 +193,40 @@ class AISynthesizer:
         each containing {title, color, narrative, bullets}.
         """
         result: dict[str, Any] = {}
+        first_section = True
 
         for section_key, section_cfg in SECTION_CONFIGS.items():
+            if not first_section and cfg.gemini_section_delay_sec > 0:
+                time.sleep(cfg.gemini_section_delay_sec)
+            first_section = False
+
             logger.info("Synthesizing section: %s", section_cfg["title"])
             try:
                 section_data = self._build_section_input(
                     section_key, section_cfg, raw_data
                 )
                 output = self._call_section(section_key, section_cfg, section_data)
-                verified = self._verify_section(section_key, section_cfg, section_data, output)
+                if cfg.verify_sections:
+                    verified = self._verify_section(
+                        section_key, section_cfg, section_data, output
+                    )
+                    narrative = verified.get("narrative", output.get("narrative", ""))
+                    bullets = verified.get("bullets", output.get("bullets", []))
+                else:
+                    narrative = output.get("narrative", "")
+                    bullets = output.get("bullets", [])
+
                 result[section_key] = {
                     "title": section_cfg["title"],
                     "color": section_cfg["color"],
-                    "narrative": verified.get("narrative", output.get("narrative", "")),
-                    "bullets": verified.get("bullets", output.get("bullets", [])),
+                    "narrative": narrative,
+                    "bullets": bullets,
                 }
             except Exception as exc:
                 logger.error("Section %s failed: %s", section_key, exc)
-                result[section_key] = {
-                    "title": section_cfg["title"],
-                    "color": section_cfg["color"],
-                    "narrative": "[DATA UNAVAILABLE — check logs for this section.]",
-                    "bullets": [],
-                }
+                result[section_key] = _fallback_section(
+                    section_key, section_cfg, raw_data, str(exc)
+                )
 
         return result
 
@@ -396,7 +408,7 @@ class AISynthesizer:
                         generation_config=genai.GenerationConfig(
                             response_mime_type="application/json",
                             temperature=0.1,
-                            max_output_tokens=8192,
+                            max_output_tokens=4096,
                         ),
                     )
                     response = model.generate_content(user_content)
@@ -435,7 +447,7 @@ class AISynthesizer:
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.3,
-                max_output_tokens=16384,
+                max_output_tokens=4096,
             ),
         )
 
@@ -471,6 +483,56 @@ class AISynthesizer:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _fallback_section(
+    section_key: str,
+    section_cfg: dict,
+    raw_data: dict[str, Any],
+    error_msg: str,
+) -> dict[str, Any]:
+    """Compile a section from RSS headlines when Gemini is unavailable."""
+    sections = raw_data.get("sections", {})
+    headlines = list(sections.get(section_key, []))
+
+    if section_key == "what_to_watch":
+        headlines = []
+        for items in sections.values():
+            headlines.extend(items[:3])
+        headlines = headlines[:12]
+
+    bullets = [
+        {
+            "label": item.get("headline", "Headline"),
+            "value": item.get("source", ""),
+            "note": (item.get("summary") or "")[:220],
+        }
+        for item in headlines[:6]
+    ]
+
+    if headlines:
+        lead = headlines[0]
+        narrative = (
+            f"{lead.get('headline', '')}. "
+            f"{(lead.get('summary') or '').strip()}"
+        ).strip()
+        if len(headlines) > 1:
+            narrative += (
+                f"\n\nAdditional developments: "
+                + "; ".join(h.get("headline", "") for h in headlines[1:4])
+            )
+    else:
+        narrative = (
+            "No section-specific headlines were available today. "
+            f"(Gemini unavailable: {error_msg[:120]})"
+        )
+
+    return {
+        "title": section_cfg["title"],
+        "color": section_cfg["color"],
+        "narrative": narrative[:1200],
+        "bullets": bullets,
+    }
+
 
 def _fmt_value(value: float, fmt: str) -> str:
     if fmt == "yield":
