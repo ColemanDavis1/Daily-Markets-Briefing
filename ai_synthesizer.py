@@ -146,6 +146,27 @@ RULES:
 - Return ONLY the JSON object. Nothing else."""
 
 # ---------------------------------------------------------------------------
+# Verification prompt — second pass fact-check
+# ---------------------------------------------------------------------------
+
+VERIFY_SYSTEM_PROMPT = """You are a financial fact-checker reviewing a morning briefing section.
+A colleague drafted the content below from the source headlines provided. Your job is to verify accuracy.
+
+RULES:
+1. Every specific claim (price, percentage, earnings figure, company action, data point) must be
+   directly traceable to the source headlines or market data provided.
+2. If a claim cannot be verified from the sources: soften it with "reportedly" or remove it entirely.
+3. If a bullet "value" contains a specific number not present in the source data, clear it to "".
+4. Never add new information. Only correct or remove what is unverifiable.
+5. Analyst opinions must remain labeled "(analyst view)".
+6. Preserve narrative length — do not summarise or shorten, only fix unsupported facts.
+7. Return ONLY valid JSON matching this schema exactly:
+{{
+  "narrative": "...",
+  "bullets": [{{"label": "...", "value": "...", "note": "..."}}]
+}}"""
+
+# ---------------------------------------------------------------------------
 # Gemini model fallback chain
 # ---------------------------------------------------------------------------
 
@@ -179,11 +200,12 @@ class AISynthesizer:
                     section_key, section_cfg, raw_data
                 )
                 output = self._call_section(section_key, section_cfg, section_data)
+                verified = self._verify_section(section_key, section_cfg, section_data, output)
                 result[section_key] = {
                     "title": section_cfg["title"],
                     "color": section_cfg["color"],
-                    "narrative": output.get("narrative", ""),
-                    "bullets": output.get("bullets", []),
+                    "narrative": verified.get("narrative", output.get("narrative", "")),
+                    "bullets": verified.get("bullets", output.get("bullets", [])),
                 }
             except Exception as exc:
                 logger.error("Section %s failed: %s", section_key, exc)
@@ -345,6 +367,58 @@ class AISynthesizer:
                 raise
 
         raise last_exc or RuntimeError("No Gemini models available")
+
+    def _verify_section(
+        self,
+        section_key: str,
+        section_cfg: dict,
+        source_input: str,
+        generated: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Fact-check generated content against source headlines. Falls back to original on error."""
+        try:
+            user_content = (
+                "SOURCE DATA (ground truth):\n"
+                + source_input
+                + "\n\nGENERATED CONTENT TO VERIFY:\n"
+                + json.dumps(generated, ensure_ascii=False)
+            )
+            models_to_try = []
+            for m in (cfg.gemini_model, *_MODEL_FALLBACKS):
+                if m and m not in models_to_try:
+                    models_to_try.append(m)
+
+            for model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=VERIFY_SYSTEM_PROMPT,
+                        generation_config=genai.GenerationConfig(
+                            response_mime_type="application/json",
+                            temperature=0.1,
+                            max_output_tokens=8192,
+                        ),
+                    )
+                    response = model.generate_content(user_content)
+                    raw = response.text.strip()
+                    if raw.startswith("```"):
+                        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+                        raw = re.sub(r"\n?```$", "", raw)
+                    verified = json.loads(raw)
+                    bullets = verified.get("bullets", [])
+                    if isinstance(bullets, dict):
+                        bullets = [bullets]
+                    verified["bullets"] = bullets
+                    logger.info("  Verified section: %s", section_cfg["title"])
+                    return verified
+                except Exception as exc:
+                    err = str(exc).lower()
+                    if any(x in err for x in ("404", "not found", "no longer available")):
+                        continue
+                    raise
+        except Exception as exc:
+            logger.warning("Verification failed for %s, using original: %s", section_key, exc)
+        return generated
 
     @retry(
         retry=retry_if_exception(_is_retryable),
