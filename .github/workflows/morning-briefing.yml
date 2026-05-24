@@ -26,7 +26,8 @@ jobs:
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GEMINI_MODEL: gemini-2.5-flash
-          VERIFY_SECTIONS: "false"
+          VERIFY_SECTIONS: "true"
+          VERIFY_ONLY_SECTIONS: markets_macro,corporate_earnings,economic_data
           GEMINI_SECTION_DELAY_SEC: "4"
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}

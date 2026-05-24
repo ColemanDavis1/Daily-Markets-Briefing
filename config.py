@@ -34,6 +34,9 @@ class Config:
         default_factory=lambda: os.getenv("VERIFY_SECTIONS", "false").lower()
         in ("1", "true", "yes")
     )
+    verify_only_sections: List[str] = field(
+        default_factory=lambda: _parse_recipients(os.getenv("VERIFY_ONLY_SECTIONS"))
+    )
     gemini_section_delay_sec: float = field(
         default_factory=lambda: float(os.getenv("GEMINI_SECTION_DELAY_SEC", "4"))
     )

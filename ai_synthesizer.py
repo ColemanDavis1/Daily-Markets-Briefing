@@ -206,7 +206,9 @@ class AISynthesizer:
                     section_key, section_cfg, raw_data
                 )
                 output = self._call_section(section_key, section_cfg, section_data)
-                if cfg.verify_sections:
+                if _should_verify(section_key):
+                    if cfg.gemini_section_delay_sec > 0:
+                        time.sleep(cfg.gemini_section_delay_sec)
                     verified = self._verify_section(
                         section_key, section_cfg, section_data, output
                     )
@@ -483,6 +485,14 @@ class AISynthesizer:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _should_verify(section_key: str) -> bool:
+    if not cfg.verify_sections:
+        return False
+    if cfg.verify_only_sections:
+        return section_key in cfg.verify_only_sections
+    return True
+
 
 def _fallback_section(
     section_key: str,
