@@ -84,11 +84,16 @@ class Config:
     )
     project_root: Path = field(default_factory=lambda: _PROJECT_ROOT)
 
-    def validate_for_briefing(self) -> List[str]:
-        """Return list of missing required settings for a full run."""
+    def validate_for_prepare(self) -> List[str]:
+        """Settings required to aggregate, synthesize, and render."""
         errors: List[str] = []
         if not self.google_api_key:
             errors.append("GOOGLE_API_KEY")
+        return errors
+
+    def validate_for_send(self) -> List[str]:
+        """Settings required to deliver email."""
+        errors: List[str] = []
         if not self.recipient_emails:
             errors.append("RECIPIENT_EMAILS")
         if not self.sender_email:
@@ -98,6 +103,12 @@ class Config:
         ):
             errors.append("SENDGRID_API_KEY or SMTP credentials")
         return errors
+
+    def validate_for_briefing(self) -> List[str]:
+        """Return list of missing required settings for a full run."""
+        return list(dict.fromkeys(
+            self.validate_for_prepare() + self.validate_for_send()
+        ))
 
 
 def get_config() -> Config:

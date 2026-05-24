@@ -61,8 +61,8 @@ def run_pipeline(
         "error": None,
     }
 
-    missing = cfg.validate_for_briefing()
-    if missing and not dry_run:
+    missing = _missing_for_mode(dry_run=dry_run, prepare_only=prepare_only)
+    if missing:
         run_log["status"] = "config_error"
         run_log["error"] = f"Missing config: {', '.join(missing)}"
         _append_log(run_log)
@@ -127,6 +127,12 @@ def run_pipeline(
     return run_log
 
 
+def _missing_for_mode(*, dry_run: bool, prepare_only: bool) -> list[str]:
+    if dry_run or prepare_only:
+        return cfg.validate_for_prepare()
+    return cfg.validate_for_briefing()
+
+
 def _send_saved() -> dict:
     """Read the prepared HTML and send it. Used by --send-only."""
     run_log: dict = {
@@ -137,6 +143,9 @@ def _send_saved() -> dict:
         "error": None,
     }
     try:
+        missing = cfg.validate_for_send()
+        if missing:
+            raise RuntimeError(f"Missing config: {', '.join(missing)}")
         if not _READY_FILE.exists():
             raise FileNotFoundError(
                 "briefing_ready.html not found — run --prepare-only first."
