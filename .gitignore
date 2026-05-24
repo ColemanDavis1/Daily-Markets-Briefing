@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 briefing_log.json
 briefing_preview.html
+briefing_ready.html
