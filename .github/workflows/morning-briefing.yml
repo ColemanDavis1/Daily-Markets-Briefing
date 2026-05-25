@@ -2,9 +2,8 @@ name: Morning Briefing
 
 on:
   schedule:
-    # Start at 12:45 UTC = 8:45 AM EDT (summer) / 7:45 AM EST (winter)
-    # Pipeline prepares early, then sleeps until exactly 9:30 AM ET to send.
-    - cron: '45 12 * * 1-5'
+    # 9:30 AM EDT (13:30 UTC) / 8:30 AM EST — reads artifact from prepare job
+    - cron: '30 13 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -21,8 +20,39 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Prepare briefing (aggregate + synthesize + render)
-        timeout-minutes: 40
+      - name: Download prepared briefing
+        id: download
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=$(gh run list \
+            --workflow=prepare.yml \
+            --status=success \
+            --limit=1 \
+            --json=databaseId \
+            --jq='.[0].databaseId')
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "No successful prepare run found."
+            exit 1
+          fi
+          gh run download "$RUN_ID" --name briefing-ready --dir .
+          echo "Downloaded briefing_ready.html from run $RUN_ID"
+
+      - name: Send prepared briefing
+        if: steps.download.outcome == 'success'
+        timeout-minutes: 5
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          TIMEZONE: America/New_York
+        run: python main.py --send-only
+
+      - name: Fallback — run full pipeline if no artifact
+        if: steps.download.outcome == 'failure'
+        timeout-minutes: 45
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GEMINI_MODEL: gemini-2.5-flash
@@ -32,30 +62,11 @@ jobs:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-          TIMEZONE: America/New_York
-        run: python main.py --prepare-only
-
-      - name: Wait until 9:30 AM ET
-        run: |
-          python3 -c "
-          import time, datetime, zoneinfo
-          et = zoneinfo.ZoneInfo('America/New_York')
-          now = datetime.datetime.now(et)
-          target = now.replace(hour=9, minute=30, second=0, microsecond=0)
-          wait = (target - now).total_seconds()
-          if wait > 0:
-              print(f'Prepared at {now.strftime(\"%H:%M:%S %Z\")}. Sleeping {int(wait)}s until 9:30 AM ET.')
-              time.sleep(wait)
-          else:
-              print(f'Prepared at {now.strftime(\"%H:%M:%S %Z\")}. 9:30 AM ET already passed — sending now.')
-          "
-
-      - name: Send briefing
-        timeout-minutes: 5
-        env:
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
           ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
           TIMEZONE: America/New_York
-        run: python main.py --send-only
+        run: |
+          echo "Prepare artifact not found — running full pipeline as fallback."
+          python main.py
