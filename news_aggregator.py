@@ -390,14 +390,17 @@ class NewsAggregator:
                 summary = _clean_text(art.get("summary", ""))
                 if not headline:
                     continue
+                published = datetime.fromtimestamp(
+                    art.get("datetime", 0), tz=timezone.utc
+                ).isoformat()
+                if not _is_recent(published):
+                    continue
                 items.append({
                     "headline": headline,
                     "summary": summary[:500],
                     "url": art.get("url", ""),
                     "source": f"finnhub:{category}",
-                    "published": datetime.fromtimestamp(
-                        art.get("datetime", 0), tz=timezone.utc
-                    ).isoformat(),
+                    "published": published,
                     "fingerprint": _fingerprint(headline),
                 })
             return items
@@ -511,14 +514,17 @@ class NewsAggregator:
                 )
                 if not title:
                     continue
+                published = _parse_date(
+                    entry.get("published", entry.get("updated", ""))
+                )
+                if not _is_recent(published):
+                    continue
                 items.append({
                     "headline": title,
                     "summary": summary[:500],
                     "url": entry.get("link", ""),
                     "source": source_key,
-                    "published": _parse_date(
-                        entry.get("published", entry.get("updated", ""))
-                    ),
+                    "published": published,
                     "fingerprint": _fingerprint(title),
                 })
             return items
@@ -621,6 +627,18 @@ def _earnings_to_headlines(earnings: list[dict]) -> list[dict]:
             "fingerprint": _fingerprint(headline),
         })
     return items
+
+
+def _is_recent(published_iso: str, max_hours: int = 48) -> bool:
+    """Return True if the article was published within the last max_hours hours."""
+    try:
+        from datetime import datetime as _dt
+        pub = _dt.fromisoformat(published_iso)
+        if pub.tzinfo is None:
+            pub = pub.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - pub).total_seconds() < max_hours * 3600
+    except Exception:
+        return True  # if unparseable, include it
 
 
 def _clean_text(text: str) -> str:

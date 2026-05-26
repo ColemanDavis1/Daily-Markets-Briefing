@@ -144,6 +144,7 @@ RULES:
 - Flag analyst opinions with "(analyst view)" inline.
 - If a headline has no market implication, exclude it.
 - Never fabricate data. If inputs are thin, note it in generation_notes but still write what you can.
+- CRITICAL: Only reference events explicitly present in today's provided headlines. Do NOT use your training knowledge to add events, prices, or company news not in the inputs. If a story is not in today's headlines, it did not happen today.
 - Return ONLY the JSON object. Nothing else."""
 
 # ---------------------------------------------------------------------------
