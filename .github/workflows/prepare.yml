@@ -6,6 +6,13 @@ on:
     - cron: '00 10 * * 1-5'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
