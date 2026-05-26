@@ -156,18 +156,18 @@ FRED_SERIES: dict[str, str] = {
     "mortgage_30y": "MORTGAGE30US",
 }
 
-# Stooq market tickers
-MARKET_TICKERS: dict[str, tuple[str, str, str]] = {
-    "sp500":       ("^spx",   "S&P 500",      "index"),
-    "nasdaq":      ("^ndq",   "NASDAQ 100",   "index"),
-    "dow":         ("^dji",   "Dow Jones",    "index"),
-    "russell2000": ("^rut",   "Russell 2000", "index"),
-    "vix":         ("^vix",   "VIX",          "index"),
-    "treasury_10y":("10us.b", "10Y Treasury", "yield"),
-    "wti_crude":   ("cl.f",   "WTI Crude",    "price"),
-    "gold":        ("xauusd", "Gold",         "price"),
-    "eurusd":      ("eurusd", "EUR/USD",      "fx"),
-    "btc":         ("btcusd", "Bitcoin",      "crypto"),
+# Tickers: (stooq_symbol, yahoo_symbol, label, format)
+MARKET_TICKERS: dict[str, tuple[str, str, str, str]] = {
+    "sp500":       ("^spx",   "^GSPC",    "S&P 500",      "index"),
+    "nasdaq":      ("^ndq",   "^NDX",     "NASDAQ 100",   "index"),
+    "dow":         ("^dji",   "^DJI",     "Dow Jones",    "index"),
+    "russell2000": ("^rut",   "^RUT",     "Russell 2000", "index"),
+    "vix":         ("^vix",   "^VIX",     "VIX",          "index"),
+    "treasury_10y":("10us.b", "^TNX",     "10Y Treasury", "yield"),
+    "wti_crude":   ("cl.f",   "CL=F",     "WTI Crude",    "price"),
+    "gold":        ("xauusd", "GC=F",     "Gold",         "price"),
+    "eurusd":      ("eurusd", "EURUSD=X", "EUR/USD",      "fx"),
+    "btc":         ("btcusd", "BTC-USD",  "Bitcoin",      "crypto"),
 }
 
 CATEGORY_KEYWORDS = SECTION_KEYWORDS  # alias used by ai_synthesizer
@@ -282,47 +282,75 @@ class NewsAggregator:
         d1 = start_date.strftime("%Y%m%d")
         d2 = end_date.strftime("%Y%m%d")
 
-        for key, (stooq_sym, label, fmt) in MARKET_TICKERS.items():
-            try:
-                url = f"https://stooq.com/q/d/l/?s={stooq_sym}&d1={d1}&d2={d2}&i=d"
-                resp = self.session.get(url, timeout=10)
-                resp.raise_for_status()
-
-                rows = [
-                    r for r in csv.DictReader(io.StringIO(resp.text))
-                    if r.get("Close", "N/A") not in ("N/A", "")
-                ]
-                if len(rows) < 2:
-                    raise ValueError(f"Insufficient rows for {stooq_sym}")
-
-                prev_close = float(rows[-2]["Close"])
-                current = float(rows[-1]["Close"])
-                change_pct = ((current - prev_close) / prev_close) * 100
-
-                snapshot[key] = {
-                    "label": label,
-                    "format": fmt,
-                    "value": current,
-                    "prev_close": prev_close,
-                    "change_pct": round(change_pct, 2),
-                    "direction": (
-                        "up" if change_pct >= 0.05
-                        else "down" if change_pct <= -0.05
-                        else "flat"
-                    ),
-                }
+        for key, (stooq_sym, yahoo_sym, label, fmt) in MARKET_TICKERS.items():
+            data = self._fetch_stooq_quote(stooq_sym, label, fmt, d1, d2)
+            if data is None:
+                logger.info("Stooq failed for %s, trying Yahoo Finance.", stooq_sym)
+                data = self._fetch_yahoo_quote(yahoo_sym, label, fmt)
+            if data is not None:
+                snapshot[key] = data
                 any_success = True
-            except Exception as exc:
-                logger.warning("Stooq failed for %s: %s", stooq_sym, exc)
+            else:
                 snapshot[key] = {
                     "label": label, "format": fmt,
                     "value": None, "change_pct": None, "direction": "flat",
                 }
-                sources_failed.append(f"stooq:{stooq_sym}")
+                sources_failed.append(f"market:{key}")
 
         if any_success:
-            sources_used.append("stooq")
+            sources_used.append("market_data")
         return snapshot
+
+    def _fetch_stooq_quote(
+        self, symbol: str, label: str, fmt: str, d1: str, d2: str
+    ) -> dict | None:
+        try:
+            url = f"https://stooq.com/q/d/l/?s={symbol}&d1={d1}&d2={d2}&i=d"
+            resp = self.session.get(url, timeout=10)
+            resp.raise_for_status()
+            rows = [
+                r for r in csv.DictReader(io.StringIO(resp.text))
+                if r.get("Close", "N/A") not in ("N/A", "")
+            ]
+            if len(rows) < 2:
+                return None
+            prev_close = float(rows[-2]["Close"])
+            current = float(rows[-1]["Close"])
+            change_pct = ((current - prev_close) / prev_close) * 100
+            return {
+                "label": label, "format": fmt,
+                "value": current, "prev_close": prev_close,
+                "change_pct": round(change_pct, 2),
+                "direction": "up" if change_pct >= 0.05 else "down" if change_pct <= -0.05 else "flat",
+            }
+        except Exception as exc:
+            logger.warning("Stooq failed for %s: %s", symbol, exc)
+            return None
+
+    def _fetch_yahoo_quote(self, symbol: str, label: str, fmt: str) -> dict | None:
+        try:
+            resp = self.session.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                params={"interval": "1d", "range": "10d"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            result = resp.json()["chart"]["result"][0]
+            closes = result["indicators"]["quote"][0]["close"]
+            valid = [v for v in closes if v is not None]
+            if len(valid) < 2:
+                return None
+            prev_close, current = valid[-2], valid[-1]
+            change_pct = ((current - prev_close) / prev_close) * 100
+            return {
+                "label": label, "format": fmt,
+                "value": current, "prev_close": prev_close,
+                "change_pct": round(change_pct, 2),
+                "direction": "up" if change_pct >= 0.05 else "down" if change_pct <= -0.05 else "flat",
+            }
+        except Exception as exc:
+            logger.warning("Yahoo Finance failed for %s: %s", symbol, exc)
+            return None
 
     # ------------------------------------------------------------------
     # FRED macro data
