@@ -35,20 +35,28 @@ cfg = get_config()
 # RSS feed registry
 # ---------------------------------------------------------------------------
 RSS_FEEDS: dict[str, str] = {
+    # Reuters — specific beats
     "reuters_business": "https://feeds.reuters.com/reuters/businessNews",
-    "reuters_markets": "https://feeds.reuters.com/reuters/marketsNews",
-    "reuters_tech": "https://feeds.reuters.com/reuters/technologyNews",
-    "reuters_health": "https://feeds.reuters.com/reuters/healthNews",
-    "cnbc_markets": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-    "cnbc_finance": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
-    "cnbc_tech": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
-    "marketwatch_top": "https://feeds.marketwatch.com/marketwatch/topstories/",
+    "reuters_markets":  "https://feeds.reuters.com/reuters/marketsNews",
+    "reuters_tech":     "https://feeds.reuters.com/reuters/technologyNews",
+    "reuters_health":   "https://feeds.reuters.com/reuters/healthNews",
+    # CNBC — curated verticals
+    "cnbc_markets":     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "cnbc_finance":     "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+    "cnbc_tech":        "https://www.cnbc.com/id/19854910/device/rss/rss.html",
+    "cnbc_earnings":    "https://www.cnbc.com/id/15839135/device/rss/rss.html",
+    "cnbc_energy":      "https://www.cnbc.com/id/19836768/device/rss/rss.html",
+    # Wall Street Journal / Dow Jones
+    "wsj_markets":      "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "wsj_business":     "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
+    "wsj_tech":         "https://feeds.a.dj.com/rss/RSSWSJD.xml",
+    "wsj_world":        "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+    # MarketWatch — market-specific
     "marketwatch_markets": "https://feeds.marketwatch.com/marketwatch/marketpulse/",
-    "yahoo_finance": "https://finance.yahoo.com/rss/headline",
-    "fed_press": "https://www.federalreserve.gov/feeds/press_all.xml",
-    "wsj_markets": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
-    "ft_world": "https://www.ft.com/rss/home/us",
-    "seeking_alpha": "https://seekingalpha.com/market_currents.xml",
+    # Financial Times
+    "ft_world":         "https://www.ft.com/rss/home/us",
+    # Federal Reserve official releases
+    "fed_press":        "https://www.federalreserve.gov/feeds/press_all.xml",
 }
 
 # ---------------------------------------------------------------------------
@@ -615,7 +623,7 @@ def _route_to_sections(headlines: list[dict]) -> dict[str, list[dict]]:
             continue
 
         text = (item.get("headline", "") + " " + item.get("summary", "")).lower()
-        best_section = "markets_macro"
+        best_section = None
         best_score = 0.0
 
         for section, keywords in SECTION_KEYWORDS.items():
@@ -624,7 +632,9 @@ def _route_to_sections(headlines: list[dict]) -> dict[str, list[dict]]:
                 best_score = score
                 best_section = section
 
-        sections[best_section].append(item)
+        # Require at least one keyword match — drop irrelevant articles entirely
+        if best_score >= 1.0 and best_section:
+            sections[best_section].append(item)
 
     # Sort each section by recency (published date, newest first), cap at 25
     for section in sections:
