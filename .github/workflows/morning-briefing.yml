@@ -1,9 +1,6 @@
 name: Morning Briefing
 
 on:
-  schedule:
-    # 9:30 AM EDT (13:30 UTC) / 8:30 AM EST — reads artifact from prepare job
-    - cron: '30 13 * * 1-5'
   workflow_dispatch:
 
 permissions:

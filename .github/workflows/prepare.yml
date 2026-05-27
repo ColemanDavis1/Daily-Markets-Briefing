@@ -1,9 +1,6 @@
 name: Prepare Briefing
 
 on:
-  schedule:
-    # 6:00 AM EDT (10:00 UTC) / 5:00 AM EST — 3.5-hour runway before send
-    - cron: '00 10 * * 1-5'
   workflow_dispatch:
 
 permissions:
