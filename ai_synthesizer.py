@@ -32,90 +32,194 @@ SECTION_CONFIGS: dict[str, dict] = {
         "title": "Markets & Macro",
         "color": "#0A4A7A",
         "editorial_focus": (
-            "Cover the dominant market theme, key index moves and their drivers, "
-            "bond market dynamics, currency moves, and any significant technical levels. "
-            "Explain the WHY behind moves — do not simply list what happened."
+            "Lead with the single most important market development and WHY it matters at a structural level.\n\n"
+            "REQUIRED ANALYSIS — cover all that are supported by today's data:\n"
+            "1. EQUITY STRUCTURE: Analyze S&P 500, NASDAQ, Dow, and Russell 2000 divergences. "
+            "What do large-cap vs. small-cap and growth vs. value differentials reveal about risk appetite and breadth? Use specific index levels.\n"
+            "2. SECTOR ROTATION: Identify the leading and lagging S&P sectors from today's ETF performance data. "
+            "What does this rotation signal — risk-on/off, cyclical/defensive shift, growth/value regime change? "
+            "Connect each sector move to its macro driver.\n"
+            "3. YIELD CURVE: Analyze the full curve (2Y, 5Y, 10Y, 30Y). Is the curve inverted, normalizing, or steepening? "
+            "What does the 2Y-10Y spread imply for recession probability and Fed expectations? "
+            "How did rate moves affect equity valuations today?\n"
+            "4. DOLLAR & CURRENCIES: Interpret DXY, EUR/USD, GBP/USD, and USD/JPY moves. "
+            "What are the implications for US multinational earnings, dollar-denominated commodities, and EM stress?\n"
+            "5. COMMODITY SIGNALS: What are gold (safe-haven/real-rate proxy), copper (industrial growth proxy), "
+            "and oil saying? Are they confirming or contradicting the equity narrative? Flag any divergence.\n"
+            "6. INTERNATIONAL CONTEXT: How do European and Asian indices compare to US markets today? "
+            "What macro forces explain the divergences?\n"
+            "7. CROSS-ASSET SYNTHESIS: Synthesize bonds, currencies, commodities, and equities into a unified thesis. "
+            "Are the signals corroborating or divergent? What does the cross-asset picture imply for the week ahead?\n"
+            "8. VOLATILITY: Interpret VIX level and trend relative to historical context."
         ),
     },
     "corporate_earnings": {
         "title": "Corporate & Earnings",
         "color": "#1A3A5C",
         "editorial_focus": (
-            "Lead with the most market-moving earnings report or corporate action. "
-            "Cover: earnings beats/misses with guidance implications, M&A deals and "
-            "strategic rationale, notable analyst calls with price target changes, "
-            "significant executive changes. Connect each item to sector implications."
+            "Lead with the most market-moving earnings result or corporate action, fully quantified.\n\n"
+            "REQUIRED ANALYSIS:\n"
+            "1. EARNINGS RESULTS: For any reported quarter, state: actual EPS vs. consensus, actual revenue vs. consensus, "
+            "the beat/miss percentage, and — most critically — what GUIDANCE implies vs. prior expectations.\n"
+            "2. GUIDANCE ANALYSIS: Guidance is more important than reported results. "
+            "What did management say about forward revenue, margins, and macro conditions? "
+            "Did they raise, lower, or maintain outlook? What is the delta?\n"
+            "3. M&A & CAPITAL ALLOCATION: For any deals, state deal value, premium to market, strategic rationale, "
+            "and whether analysts view it as accretive or dilutive. Cover buyback authorizations and dividend changes.\n"
+            "4. ANALYST CALLS: Include specific price target changes (old vs. new), the key thesis, "
+            "and the sector implications of upgrades/downgrades.\n"
+            "5. EXECUTIVE CHANGES: Frame any leadership changes in terms of strategic direction shift.\n"
+            "6. UPCOMING CATALYSTS: Flag major companies reporting this week, what the consensus estimates are, "
+            "and which specific metrics will determine the market reaction."
         ),
     },
     "technology_ai": {
         "title": "Technology & AI",
         "color": "#0A3A6A",
         "editorial_focus": (
-            "Cover AI model releases and competitive dynamics, semiconductor supply "
-            "and demand signals, major funding rounds and their market signals, "
-            "regulatory developments in tech, and hardware/infrastructure buildout. "
-            "Connect technology developments to investment and competitive implications."
+            "Cover the most material technology and AI developments for institutional investors.\n\n"
+            "REQUIRED ANALYSIS:\n"
+            "1. AI COMPETITIVE DYNAMICS: New model releases, capability benchmarks, infrastructure investments. "
+            "Who wins and loses competitively? Frame in terms of market share and valuation implications for major players.\n"
+            "2. SEMICONDUCTOR SUPPLY CHAIN: Availability, pricing, lead times, and capacity expansion. "
+            "Connect directly to major beneficiaries (NVDA, AMD, ASML, TSMC, AMAT).\n"
+            "3. FUNDING & M&A: State valuations, investor composition, and what each deal signals about "
+            "where institutional capital is flowing and which AI/tech themes are gaining traction.\n"
+            "4. REGULATORY RISK: Antitrust actions, data privacy enforcement, AI governance developments. "
+            "Frame specific market and operational impacts.\n"
+            "5. INFRASTRUCTURE BUILDOUT: Data center, power, and networking capex commitments. "
+            "Identify the picks-and-shovels beneficiaries and the capex cycle timeline.\n"
+            "6. HYPERSCALER DYNAMICS: Azure, AWS, Google Cloud market share shifts and their implications "
+            "for enterprise software and AI services demand."
         ),
     },
     "healthcare": {
         "title": "Healthcare",
         "color": "#0A5A4A",
         "editorial_focus": (
-            "Cover FDA approvals/rejections and their revenue implications, clinical "
-            "trial results with statistical context, pharma/biotech M&A and pipeline "
-            "deals, insurance and reimbursement policy changes, hospital sector trends. "
-            "Flag anything with near-term stock price implications."
+            "Cover FDA decisions, clinical data, and policy with institutional-grade analytical depth.\n\n"
+            "REQUIRED ANALYSIS:\n"
+            "1. FDA DECISIONS: For approvals — state indication, addressable patient population, "
+            "projected peak sales (if analyst estimates available), competitive landscape, and pricing dynamics. "
+            "For rejections/CRLs — state the deficiency and remediation pathway with timeline.\n"
+            "2. CLINICAL DATA: Report primary endpoint results, statistical significance (p-values where available), "
+            "comparison to prior clinical benchmarks, and what this means for the asset's commercial trajectory.\n"
+            "3. M&A & LICENSING: State deal value, premium to market, pipeline asset acquired, "
+            "strategic fit, and any projected synergies.\n"
+            "4. POLICY & REIMBURSEMENT: CMS coverage decisions, IRA drug price negotiation developments, "
+            "and their specific revenue impact by company.\n"
+            "5. SECTOR POSITIONING: Is healthcare acting defensively (risk-off rotation) or "
+            "offensively (drug cycle/innovation tailwind)?\n"
+            "6. UPCOMING CATALYSTS: PDUFA dates, pivotal trial readouts, and policy decisions in the next 30-60 days."
         ),
     },
     "industrials": {
         "title": "Industrials",
         "color": "#3A2A6A",
         "editorial_focus": (
-            "Cover manufacturing data releases (PMI, factory orders, capacity "
-            "utilization), aerospace and defense contract awards, infrastructure "
-            "spending developments, logistics and supply chain conditions, "
-            "union/labor developments at major industrial companies."
+            "Cover manufacturing, defense, and logistics with quantified macro linkages.\n\n"
+            "REQUIRED ANALYSIS:\n"
+            "1. MANUFACTURING DATA: PMI readings (actual vs. consensus, sub-components: new orders, employment, "
+            "prices paid, inventories). What is the manufacturing cycle signal — expansion, contraction, or inflection?\n"
+            "2. DEFENSE CONTRACTING: Contract awards with dollar values, duration, strategic context, "
+            "and which prime contractors benefit. Frame in budget and geopolitical context.\n"
+            "3. INFRASTRUCTURE: Federal spending deployment, project awards, and materials demand implications "
+            "from infrastructure legislation.\n"
+            "4. LOGISTICS & SUPPLY CHAIN: Freight rates, inventory levels, port conditions — "
+            "leading indicators of industrial demand and inflationary pressure.\n"
+            "5. LABOR DYNAMICS: Union contract outcomes, wage settlements, and their direct margin implications "
+            "for major industrial companies. "
+            "6. CAPEX SIGNALS: Major equipment orders or plant investment as forward demand indicators "
+            "for the industrial cycle."
         ),
     },
     "energy_commodities": {
         "title": "Energy & Commodities",
         "color": "#5A3A0A",
         "editorial_focus": (
-            "Cover crude oil price action and OPEC+ production decisions, natural "
-            "gas and LNG market dynamics, renewable energy policy and investment, "
-            "metals markets (gold, copper, lithium as leading indicators), and "
-            "agricultural commodities if relevant to inflation narrative."
+            "Cover energy markets and commodities as both investment themes and macro indicators.\n\n"
+            "REQUIRED ANALYSIS:\n"
+            "1. OIL MARKET STRUCTURE: WTI and Brent absolute levels and daily move with specific drivers. "
+            "OPEC+ production signals and compliance. US inventory data vs. expectations. "
+            "What is the marginal cost context for current prices?\n"
+            "2. ENERGY SECTOR: Upstream vs. downstream performance divergence. "
+            "E&P vs. services vs. integrated companies. Refining margin dynamics.\n"
+            "3. NATURAL GAS & LNG: Price dynamics, storage vs. 5-year average, LNG export flows and "
+            "European/Asian demand signals.\n"
+            "4. METALS AS MACRO SIGNALS: Copper as industrial growth proxy, gold as real-rate/safe-haven indicator, "
+            "silver as industrial/monetary hybrid. Interpret current levels in that analytical framework — "
+            "what are these metals signaling about growth and inflation expectations?\n"
+            "5. ENERGY TRANSITION: Renewable capacity additions, battery/storage economics, policy developments. "
+            "Frame implications for traditional energy investment thesis.\n"
+            "6. COMMODITY INFLATION PASS-THROUGH: Connect price moves to CPI/PPI implications "
+            "and corporate input cost/margin risk."
         ),
     },
     "geopolitical_risk": {
         "title": "Geopolitical Risk",
         "color": "#5A0A0A",
         "editorial_focus": (
-            "Frame every item in terms of direct market, supply chain, or regulatory "
-            "impact. Cover: active conflicts with commodity/trade implications, "
-            "tariff and sanctions developments, election outcomes and policy risk, "
-            "emerging market stress. Do not cover geopolitics without a market angle."
+            "Every geopolitical development must be translated into a specific market, supply chain, or regulatory impact. "
+            "Do not cover geopolitics without a concrete market angle.\n\n"
+            "REQUIRED ANALYSIS:\n"
+            "1. TARIFF & TRADE: New tariffs, exemptions, or negotiations. State affected trade volume in dollars, "
+            "sectors impacted, company-level winners and losers, and consumer price implications.\n"
+            "2. SANCTIONS: New sanctions or enforcement actions. State affected commodities, financial flows, "
+            "alternative sourcing implications, and which EM economies face collateral risk.\n"
+            "3. ACTIVE CONFLICTS: Only cover if there are direct commodity, logistics, or defense spending implications. "
+            "State the specific market impact with quantification where possible.\n"
+            "4. ELECTION & POLICY RISK: Upcoming elections or regime changes that could materially affect "
+            "market structure. Frame as binary scenario analysis with market outcomes.\n"
+            "5. EMERGING MARKET STRESS: Sovereign debt, currency crises, or capital outflows with "
+            "potential contagion to developed market assets.\n"
+            "6. REGULATORY ENFORCEMENT: FTC, DOJ, EU competition authority actions that reshape "
+            "corporate strategies and sector valuations."
         ),
     },
     "economic_data": {
         "title": "Economic Data & Fed",
         "color": "#0A3A2A",
         "editorial_focus": (
-            "Lead with any data released today (CPI, PCE, jobs, GDP) and its "
-            "implications for Fed policy. Cover Fed communications, rate expectations, "
-            "yield curve dynamics. Use FRED data if provided to ground the narrative "
-            "in actual figures. Distinguish consensus expectations from actual prints."
+            "Lead with any data released today and its Fed policy implications. This section sets rate expectations.\n\n"
+            "REQUIRED ANALYSIS:\n"
+            "1. TODAY'S DATA RELEASES: For each release, state: actual vs. consensus, prior reading, "
+            "any revision to prior month, and the directional delta from expectations. "
+            "What does each print imply for the Fed? Be precise.\n"
+            "2. INFLATION REGIME: Current CPI, Core CPI, and Core PCE (the Fed's preferred measure) "
+            "in the context of the 2% target. Assess the trajectory — MoM, YoY, and 3-month annualized. "
+            "Are we converging toward target or stalling?\n"
+            "3. LABOR MARKET: Payrolls, unemployment rate, wage growth, and participation rate. "
+            "Distinguish cyclical from structural weakness. Is the labor market cooling enough for the Fed?\n"
+            "4. FED COMMUNICATIONS: Any FOMC member speeches or statements. "
+            "Identify the hawkish vs. dovish divide and where consensus is shifting.\n"
+            "5. RATE EXPECTATIONS: What does the market currently price for the next FOMC meeting "
+            "and year-end? How did today's data move those probabilities?\n"
+            "6. YIELD CURVE IMPLICATIONS: Connect today's economic data to the yield curve shape and "
+            "what it implies for recession probability and the real economy.\n"
+            "7. GROWTH TRAJECTORY: GDP, industrial production, retail sales, and housing — "
+            "what is the composite picture of economic momentum?"
         ),
     },
     "what_to_watch": {
         "title": "What to Watch",
         "color": "#2A0A5A",
         "editorial_focus": (
-            "List the 4-5 most important catalysts to monitor in the next 24-48 hours. "
-            "Include: scheduled economic releases with consensus estimates, earnings "
-            "reports with key metrics to watch, Fed speakers and their known stances, "
-            "geopolitical developments with binary outcomes. Each item must explain "
-            "WHY it matters and what the bull/bear scenario looks like."
+            "Identify the 5-6 most important catalysts in the next 24-72 hours. "
+            "This is the forward intelligence section — actionable, specific, time-bound.\n\n"
+            "For EACH catalyst provide:\n"
+            "- WHAT: Exact event or data release\n"
+            "- WHEN: Specific time if known\n"
+            "- WHY IT MATTERS: What market narrative it confirms or refutes\n"
+            "- BULL SCENARIO: What would be market-positive and estimated market impact\n"
+            "- BEAR SCENARIO: What would be market-negative and estimated market impact\n"
+            "- CONSENSUS: Specific number or expectation if available\n\n"
+            "REQUIRED CATALYSTS TO IDENTIFY:\n"
+            "1. Scheduled economic data releases (CPI, PCE, payrolls, GDP, PMIs) with consensus estimates\n"
+            "2. Fed speakers or FOMC events and their known policy stances\n"
+            "3. Major earnings reports with EPS/revenue consensus and the one metric that will drive the reaction\n"
+            "4. Geopolitical deadlines or binary events\n"
+            "5. Technical levels: key S&P 500 support/resistance that could trigger systematic flows\n"
+            "6. International market catalysts (ECB, BOJ, China policy)"
         ),
     },
 }
@@ -124,28 +228,35 @@ SECTION_CONFIGS: dict[str, dict] = {
 # Per-section system prompt template
 # ---------------------------------------------------------------------------
 
-SECTION_SYSTEM_PROMPT = """You are a senior editor at a premier financial intelligence publication.
+SECTION_SYSTEM_PROMPT = """You are the chief markets editor at the world's most authoritative financial intelligence publication — serving portfolio managers, hedge fund analysts, chief investment officers, and senior executives who make multi-billion-dollar decisions based on your analysis. Your writing combines the analytical rigor of a top-tier sell-side research note with the narrative clarity of award-winning financial journalism.
+
 You are writing the {section_title} section of today's morning briefing.
 
-EDITORIAL FOCUS:
+YOUR JOB IS TO EXPLAIN, NOT TO REPEAT. The reader can already see the headlines and the raw numbers in a data table above your section. Your value is interpretation: tell them what the numbers and headlines actually MEAN, WHY they moved, and WHY it matters. Never restate a headline verbatim — translate it into insight. Write for a smart, engaged reader who is not a markets specialist: keep the institutional depth, but make every conclusion legible by explaining the mechanism behind it and briefly defining any jargon the first time you use it (e.g., "the 2s10s spread — the gap between 2- and 10-year Treasury yields, a classic recession gauge").
+
+EDITORIAL MANDATE:
 {editorial_focus}
 
 OUTPUT FORMAT — return ONLY valid JSON, no markdown fences, matching this schema exactly:
 {{
-  "narrative": "2-3 paragraphs of editorial prose. Separate paragraphs with \\n\\n. Write in active voice, executive tone. Each paragraph 4-6 sentences. Synthesize themes — do not list headlines.",
+  "bottom_line": "1-2 plain-language sentences capturing the single most important takeaway of this section — what a busy reader must understand if they read nothing else. State the 'so what,' not just the 'what.'",
+  "narrative": "4-5 paragraphs of expert financial analysis. Separate paragraphs with \\n\\n. Write with authority, precision, and quantitative rigor — but make every point legible by explaining the cause-and-effect mechanism. Minimum 4 sentences per paragraph. Synthesize multiple data points into a coherent analytical thesis — never list headlines sequentially. Every claim requires a specific number. For each key development follow the chain: what happened -> WHY it happened -> why it matters / what to watch next. Identify the bull and bear interpretation of key developments where relevant.",
   "bullets": [
-    {{"label": "Company/Metric/Event", "value": "key number or fact", "note": "one sentence: implication or context"}}
+    {{"label": "Ticker / Metric / Event", "value": "specific figure with units, sign, and context", "note": "a full explanatory sentence: WHY this moved or what it implies forward — not a restatement of the label"}}
   ]
 }}
 
-RULES:
-- narrative: minimum 2 paragraphs, minimum 4 sentences each. This is a 15-minute read — be thorough.
-- bullets: 4-6 items. Lead with the most market-relevant data points, specific numbers, ticker symbols.
-- Flag analyst opinions with "(analyst view)" inline.
-- If a headline has no market implication, exclude it.
-- Never fabricate data. If inputs are thin, note it in generation_notes but still write what you can.
-- CRITICAL: Only reference events explicitly present in today's provided headlines. Do NOT use your training knowledge to add events, prices, or company news not in the inputs. If a story is not in today's headlines, it did not happen today.
-- Return ONLY the JSON object. Nothing else."""
+NON-NEGOTIABLE RULES:
+1. Minimum 4 paragraphs, 4-5 sentences each. This is a deep, explanatory institutional read — no summaries, no padding, no headline lists.
+2. Explain the mechanism behind every move. Not "stocks rose" and not even "S&P 500 gained 1.2% to 5,280" alone, but "the S&P 500 gained 1.2% to 5,280 as falling Treasury yields (down 8bps) lowered the discount rate on future earnings, which disproportionately lifts richly-valued technology names."
+3. Define jargon briefly on first use so a non-specialist can follow the reasoning.
+4. 5-7 bullet points. Lead with the most market-critical data. Include specific numbers in every bullet, and make each note explain significance.
+5. Every consensus beat/miss must cite both the actual figure and the consensus estimate, then explain why the gap matters.
+6. Flag analyst opinions with "(analyst view)." Attribute institutional views if sourced.
+7. Frame key developments with asymmetry: what is the bull case? What is the bear case?
+8. If a data point has no market implication, exclude it.
+9. CRITICAL: Only reference events explicitly present in today's provided data. Do NOT use training knowledge to add prices, events, or company news not in the inputs.
+10. Return ONLY the JSON object. Nothing else."""
 
 # ---------------------------------------------------------------------------
 # Verification prompt — second pass fact-check
@@ -161,9 +272,10 @@ RULES:
 3. If a bullet "value" contains a specific number not present in the source data, clear it to "".
 4. Never add new information. Only correct or remove what is unverifiable.
 5. Analyst opinions must remain labeled "(analyst view)".
-6. Preserve narrative length — do not summarise or shorten, only fix unsupported facts.
+6. Preserve narrative length and the bottom_line — do not summarise or shorten, only fix unsupported facts.
 7. Return ONLY valid JSON matching this schema exactly:
 {{
+  "bottom_line": "...",
   "narrative": "...",
   "bullets": [{{"label": "...", "value": "...", "note": "..."}}]
 }}"""
@@ -215,13 +327,18 @@ class AISynthesizer:
                     )
                     narrative = verified.get("narrative", output.get("narrative", ""))
                     bullets = verified.get("bullets", output.get("bullets", []))
+                    bottom_line = verified.get(
+                        "bottom_line", output.get("bottom_line", "")
+                    )
                 else:
                     narrative = output.get("narrative", "")
                     bullets = output.get("bullets", [])
+                    bottom_line = output.get("bottom_line", "")
 
                 result[section_key] = {
                     "title": section_cfg["title"],
                     "color": section_cfg["color"],
+                    "bottom_line": bottom_line,
                     "narrative": narrative,
                     "bullets": bullets,
                 }
@@ -247,69 +364,83 @@ class AISynthesizer:
         now = datetime.now().strftime("%A, %B %d, %Y")
         parts.append(f"DATE: {now}\nSECTION: {section_cfg['title']}\n")
 
-        # Market snapshot for markets/macro section
-        if section_key == "markets_macro":
-            snap = raw_data.get("market_snapshot", {})
-            if snap:
-                parts.append("MARKET PRICES:")
-                for key, data in snap.items():
-                    if data.get("value") is not None:
-                        chg = data.get("change_pct")
-                        chg_str = f"{chg:+.2f}%" if chg is not None else "N/A"
-                        parts.append(
-                            f"  {data['label']}: {_fmt_value(data['value'], data.get('format',''))} "
-                            f"({chg_str}) [{data.get('direction','')}]"
-                        )
-                parts.append("")
+        snap = raw_data.get("market_snapshot", {})
 
-        # FRED macro data for economic/markets sections
-        if section_key in ("economic_data", "markets_macro"):
+        # Full cross-asset market data for markets/macro and what_to_watch
+        if section_key in ("markets_macro", "what_to_watch"):
+            _append_primary_indices(parts, snap)
+            _append_sector_performance(parts, snap)
+            _append_yield_curve(parts, snap)
+            _append_fx(parts, snap)
+            _append_commodities(parts, snap)
+            _append_international(parts, snap)
+            _append_crypto(parts, snap)
+        elif section_key == "economic_data":
+            _append_primary_indices(parts, snap)
+            _append_yield_curve(parts, snap)
+        else:
+            # Brief market context for all other sections
+            _append_primary_indices(parts, snap)
+
+        # FRED macro data for economic and market sections
+        if section_key in ("economic_data", "markets_macro", "what_to_watch"):
             macro = raw_data.get("macro_data", {})
             if macro:
-                parts.append("FRED MACRO DATA (Federal Reserve):")
-                labels = {
-                    "fed_funds_rate": "Fed Funds Rate",
-                    "cpi_yoy": "CPI (latest reading)",
-                    "core_cpi": "Core CPI",
-                    "unemployment": "Unemployment Rate",
-                    "gdp_growth": "GDP",
-                    "yield_spread_10y2y": "10Y-2Y Yield Spread",
-                    "mortgage_30y": "30Y Mortgage Rate",
+                parts.append("FRED MACRO DATA (Federal Reserve — latest available readings):")
+                fred_labels = {
+                    "fed_funds_rate":     "Fed Funds Rate (%)",
+                    "cpi_yoy":            "CPI YoY (%)",
+                    "core_cpi":           "Core CPI YoY (%)",
+                    "core_pce":           "Core PCE YoY (%) — Fed's preferred measure",
+                    "unemployment":       "Unemployment Rate (%)",
+                    "gdp_growth":         "GDP (billions $)",
+                    "real_gdp_growth":    "Real GDP Growth QoQ Annualized (%)",
+                    "yield_spread_10y2y": "10Y-2Y Yield Spread (pp, FRED)",
+                    "mortgage_30y":       "30Y Mortgage Rate (%)",
+                    "ppi":                "PPI All Commodities",
+                    "industrial_prod":    "Industrial Production Index",
+                    "retail_sales":       "Retail Sales ex Food Svcs",
+                    "housing_starts":     "Housing Starts (thousands, ann.)",
                 }
                 for key, data in macro.items():
                     if data.get("value") is not None:
-                        label = labels.get(key, key)
+                        label = fred_labels.get(key, key)
+                        prev = data.get("prev_value")
+                        prev_str = f" | Prior: {prev}" if prev is not None else ""
                         parts.append(
-                            f"  {label}: {data['value']} (as of {data.get('date','')})"
+                            f"  {label}: {data['value']} (as of {data.get('date','')}){prev_str}"
                         )
                 parts.append("")
 
-        # Earnings calendar for corporate section
+        # Earnings calendar for corporate and forward-looking sections
         if section_key in ("corporate_earnings", "what_to_watch"):
             earnings = raw_data.get("earnings_calendar", [])
             if earnings:
                 parts.append(f"UPCOMING EARNINGS ({len(earnings)} companies this week):")
-                for e in earnings[:15]:
+                for e in earnings[:20]:
                     sym = e.get("symbol", "")
                     date = e.get("date", "")
                     eps = e.get("epsEstimate")
+                    rev = e.get("revenueEstimate")
                     eps_str = f" | EPS est: ${eps:.2f}" if eps else ""
-                    parts.append(f"  {sym} — {date}{eps_str}")
+                    rev_str = f" | Rev est: ${rev/1e9:.1f}B" if rev and rev > 1e8 else ""
+                    parts.append(f"  {sym} — {date}{eps_str}{rev_str}")
                 parts.append("")
 
-        # Economic calendar for forward-looking sections
+        # Economic calendar
         if section_key in ("economic_data", "what_to_watch"):
             econ_cal = raw_data.get("economic_calendar", [])
             if econ_cal:
                 parts.append(f"ECONOMIC CALENDAR ({len(econ_cal)} events):")
-                for e in econ_cal[:10]:
+                for e in econ_cal[:15]:
                     event = e.get("event", "")
                     impact = e.get("impact", "")
                     actual = e.get("actual", "")
                     estimate = e.get("estimate", "")
+                    prior = e.get("prev", "")
                     parts.append(
                         f"  {event} | Impact: {impact} | "
-                        f"Actual: {actual or 'pending'} | Est: {estimate or 'N/A'}"
+                        f"Actual: {actual or 'pending'} | Est: {estimate or 'N/A'} | Prior: {prior or 'N/A'}"
                     )
                 parts.append("")
 
@@ -326,12 +457,11 @@ class AISynthesizer:
         sections = raw_data.get("sections", {})
         headlines = sections.get(section_key, [])
 
-        # what_to_watch gets headlines from all sections
         if section_key == "what_to_watch":
             all_headlines = []
             for s_headlines in sections.values():
                 all_headlines.extend(s_headlines[:5])
-            headlines = all_headlines[:30]
+            headlines = all_headlines[:35]
 
         if headlines:
             parts.append(f"HEADLINES ({len(headlines)} items):")
@@ -341,7 +471,7 @@ class AISynthesizer:
                 summary = item.get("summary", "")
                 parts.append(f"{i}. [{src}] {headline}")
                 if summary:
-                    parts.append(f"   {summary[:250]}")
+                    parts.append(f"   {summary[:300]}")
             parts.append("")
 
         if not headlines and section_key != "what_to_watch":
@@ -408,11 +538,11 @@ class AISynthesizer:
                     model = genai.GenerativeModel(
                         model_name=model_name,
                         system_instruction=VERIFY_SYSTEM_PROMPT,
-                        generation_config=genai.GenerationConfig(
-                            response_mime_type="application/json",
-                            temperature=0.1,
-                            max_output_tokens=4096,
-                        ),
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1,
+                        max_output_tokens=8192,
+                    ),
                     )
                     response = model.generate_content(user_content)
                     raw = response.text.strip()
@@ -449,8 +579,8 @@ class AISynthesizer:
             system_instruction=system_prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
-                temperature=0.3,
-                max_output_tokens=4096,
+                temperature=0.4,
+                max_output_tokens=8192,
             ),
         )
 
@@ -522,25 +652,39 @@ def _fallback_section(
 
     if headlines:
         lead = headlines[0]
+        themes = "; ".join(
+            h.get("headline", "") for h in headlines[1:4] if h.get("headline")
+        )
         narrative = (
-            f"{lead.get('headline', '')}. "
+            "AI synthesis was unavailable for this section today, so the items "
+            "below are presented without full editorial analysis. The day's lead "
+            f"development concerned: {lead.get('headline', '').rstrip('.')}. "
             f"{(lead.get('summary') or '').strip()}"
         ).strip()
-        if len(headlines) > 1:
+        if themes:
             narrative += (
-                f"\n\nAdditional developments: "
-                + "; ".join(h.get("headline", "") for h in headlines[1:4])
+                "\n\nOther threads worth watching in this area today included: "
+                f"{themes}. Read these alongside the market data table above for "
+                "context until full analysis resumes."
             )
+        bottom_line = (
+            "Automated analysis was unavailable for this section today; the items "
+            "below are raw source headlines rather than interpreted insight."
+        )
     else:
         narrative = (
-            "No section-specific headlines were available today. "
-            f"(Gemini unavailable: {error_msg[:120]})"
+            "No section-specific headlines were available today, and automated "
+            f"analysis could not run (reason: {error_msg[:120]})."
+        )
+        bottom_line = (
+            "No data or analysis was available for this section in today's run."
         )
 
     return {
         "title": section_cfg["title"],
         "color": section_cfg["color"],
-        "narrative": narrative[:1200],
+        "bottom_line": bottom_line,
+        "narrative": narrative[:1400],
         "bullets": bullets,
     }
 
@@ -555,3 +699,118 @@ def _fmt_value(value: float, fmt: str) -> str:
     elif fmt == "fx":
         return f"{value:.4f}"
     return f"{value:,.2f}"
+
+
+def _fmt_ticker_line(data: dict) -> str:
+    if data.get("value") is None:
+        return "N/A"
+    chg = data.get("change_pct")
+    chg_str = f"{chg:+.2f}%" if chg is not None else "N/A"
+    direction = data.get("direction", "")
+    return f"{_fmt_value(data['value'], data.get('format',''))} ({chg_str}) [{direction}]"
+
+
+def _append_primary_indices(parts: list, snap: dict) -> None:
+    primary = snap.get("primary", {})
+    if not primary:
+        return
+    parts.append("PRIMARY INDICES:")
+    for key, data in primary.items():
+        if data.get("value") is not None:
+            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
+    vix = primary.get("vix", {})
+    if vix.get("value") is not None:
+        level = vix["value"]
+        regime = "elevated fear" if level > 25 else "moderate caution" if level > 18 else "complacency/calm"
+        parts.append(f"  VIX regime note: {level:.1f} indicates {regime}")
+    parts.append("")
+
+
+def _append_sector_performance(parts: list, snap: dict) -> None:
+    sectors = snap.get("sectors", {})
+    if not sectors:
+        return
+    valid = [(k, v) for k, v in sectors.items() if v.get("change_pct") is not None]
+    if not valid:
+        return
+    ranked = sorted(valid, key=lambda x: x[1].get("change_pct", 0), reverse=True)
+    parts.append("S&P 500 SECTOR ETF PERFORMANCE (ranked best to worst):")
+    for key, data in ranked:
+        chg = data.get("change_pct", 0)
+        parts.append(f"  {data['label']} ({key.upper()}): {chg:+.2f}%")
+    if ranked:
+        best = ranked[0][1]
+        worst = ranked[-1][1]
+        spread = (best.get("change_pct", 0) or 0) - (worst.get("change_pct", 0) or 0)
+        parts.append(f"  Sector dispersion (leader-laggard spread): {spread:.2f}pp")
+    parts.append("")
+
+
+def _append_yield_curve(parts: list, snap: dict) -> None:
+    rates = snap.get("rates", {})
+    if not rates:
+        return
+    parts.append("YIELD CURVE & FIXED INCOME:")
+    order = ["treasury_2y", "treasury_5y", "treasury_10y", "treasury_30y"]
+    for key in order:
+        data = rates.get(key, {})
+        if data.get("value") is not None:
+            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
+    derived = snap.get("derived", {})
+    if derived:
+        spread_bps = derived.get("spread_2y10y_bps")
+        inverted = derived.get("yield_curve_inverted", False)
+        if spread_bps is not None:
+            status = "INVERTED (recession signal active)" if inverted else "normal (positive slope)"
+            parts.append(f"  2Y-10Y Spread: {spread_bps:+d}bps — curve is {status}")
+    parts.append("")
+
+
+def _append_fx(parts: list, snap: dict) -> None:
+    fx = snap.get("fx", {})
+    if not fx:
+        return
+    parts.append("FOREIGN EXCHANGE:")
+    for key, data in fx.items():
+        if data.get("value") is not None:
+            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
+    dxy = fx.get("dxy", {})
+    if dxy.get("value") is not None:
+        chg = dxy.get("change_pct", 0) or 0
+        direction = "strengthening (headwind for commodities and EM)" if chg > 0.1 else \
+                    "weakening (tailwind for commodities and EM)" if chg < -0.1 else "broadly flat"
+        parts.append(f"  DXY note: dollar {direction}")
+    parts.append("")
+
+
+def _append_commodities(parts: list, snap: dict) -> None:
+    commodities = snap.get("commodities", {})
+    if not commodities:
+        return
+    parts.append("COMMODITIES:")
+    for key, data in commodities.items():
+        if data.get("value") is not None:
+            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
+    parts.append("")
+
+
+def _append_international(parts: list, snap: dict) -> None:
+    intl = snap.get("international", {})
+    if not intl:
+        return
+    parts.append("INTERNATIONAL EQUITY INDICES:")
+    for key, data in intl.items():
+        if data.get("value") is not None:
+            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
+    parts.append("")
+
+
+def _append_crypto(parts: list, snap: dict) -> None:
+    crypto = snap.get("crypto", {})
+    if not crypto:
+        return
+    parts.append("CRYPTOCURRENCY:")
+    for key, data in crypto.items():
+        if data.get("value") is not None:
+            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
+    parts.append("")

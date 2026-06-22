@@ -62,9 +62,17 @@ def _build_context(
     if sections and sections[0].get("narrative"):
         preheader = sections[0]["narrative"][:120].replace("\n", " ")
 
+    # Sector ETFs sorted by performance (best to worst) for ranked display
+    sectors_raw = market_snapshot.get("sectors", {})
+    sorted_sectors = sorted(
+        [(k, v) for k, v in sectors_raw.items() if v.get("change_pct") is not None],
+        key=lambda x: x[1].get("change_pct", 0),
+        reverse=True,
+    )
+
     # Sources
     sources: list[str] = []
-    for src in ["stooq", "finnhub", "fred", "newsapi", "reuters", "cnbc"]:
+    for src in ["stooq", "finnhub", "fred", "newsapi", "reuters", "cnbc", "sec edgar"]:
         sources.append(src.upper())
 
     return {
@@ -75,6 +83,7 @@ def _build_context(
         "preheader_text": preheader,
         "unsubscribe_url": os.environ.get("UNSUBSCRIBE_URL", "mailto:unsubscribe@example.com"),
         "market_snapshot": market_snapshot,
+        "sorted_sectors": sorted_sectors,
         "sections": sections,
         "sources_list": ", ".join(sources),
     }

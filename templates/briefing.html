@@ -88,40 +88,35 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
   {% if market_snapshot %}
   <tr>
-    <td style="background:#0D1F38;padding:0;">
+    <td style="background:#0A1628;padding:0;">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+
+        <!-- ─── Section label ─── -->
         <tr>
-          <td class="snap-pad" style="padding:8px 40px 4px 40px;">
+          <td class="snap-pad" style="padding:10px 40px 6px 40px;">
             <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
               MARKET SNAPSHOT
             </p>
           </td>
         </tr>
+
+        <!-- ─── PRIMARY INDICES ─── -->
+        {% if market_snapshot.primary %}
         <tr>
-          <td style="padding:6px 32px 16px 32px;">
+          <td style="padding:4px 32px 8px 32px;">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
               <tr>
-                {% for key, data in market_snapshot.items() %}
-                <td class="market-cell" valign="top" style="padding:6px 8px;text-align:center;">
-                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">
-                    {{ data.label }}
-                  </p>
+                {% for key, data in market_snapshot.primary.items() %}
+                <td class="market-cell" valign="top" style="padding:5px 6px;text-align:center;width:20%;">
+                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
                   {% if data.value is not none %}
                     <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;">
-                      {% if data.format == 'yield' %}{{ "%.2f"|format(data.value) }}%
-                      {% elif data.format == 'price' %}${{ "{:,.2f}".format(data.value) }}
-                      {% elif data.format == 'crypto' %}${{ "{:,.0f}".format(data.value) }}
-                      {% elif data.format == 'fx' %}{{ "%.4f"|format(data.value) }}
-                      {% else %}{{ "{:,.2f}".format(data.value) }}{% endif %}
+                      {% if data.format == 'yield' %}{{ "%.2f"|format(data.value) }}%{% elif data.format == 'price' %}${{ "{:,.2f}".format(data.value) }}{% elif data.format == 'crypto' %}${{ "{:,.0f}".format(data.value) }}{% elif data.format == 'fx' %}{{ "%.4f"|format(data.value) }}{% else %}{{ "{:,.2f}".format(data.value) }}{% endif %}
                     </p>
                     {% if data.change_pct is not none %}
-                      {% if data.direction == 'up' %}
-                        <p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% elif data.direction == 'down' %}
-                        <p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
-                      {% else %}
-                        <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">&#9644; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% endif %}
+                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
+                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">&#9644; {{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
                     {% endif %}
                   {% else %}
                     <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
@@ -132,7 +127,230 @@
             </table>
           </td>
         </tr>
+        {% endif %}
+
+        <!-- ─── DIVIDER ─── -->
         <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+
+        <!-- ─── S&P 500 SECTORS ─── -->
+        {% if sorted_sectors %}
+        <tr>
+          <td style="padding:6px 40px 2px 40px;">
+            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">S&amp;P 500 SECTORS &mdash; TODAY&rsquo;S PERFORMANCE</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 32px 8px 32px;">
+            {% set mid = ((sorted_sectors | length) + 1) // 2 %}
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                <td width="49%" valign="top">
+                  {% for key, data in sorted_sectors[:mid] %}
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:2px;">
+                    <tr>
+                      <td style="padding:1px 4px;">
+                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ data.label }}</span>
+                      </td>
+                      <td align="right" style="padding:1px 4px;">
+                        {% if data.direction == 'up' %}<span style="color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</span>
+                        {% elif data.direction == 'down' %}<span style="color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</span>
+                        {% else %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</span>{% endif %}
+                      </td>
+                    </tr>
+                  </table>
+                  {% endfor %}
+                </td>
+                <td width="2%" style="background:#1A2F4A;">&nbsp;</td>
+                <td width="49%" valign="top">
+                  {% for key, data in sorted_sectors[mid:] %}
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:2px;">
+                    <tr>
+                      <td style="padding:1px 4px;">
+                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ data.label }}</span>
+                      </td>
+                      <td align="right" style="padding:1px 4px;">
+                        {% if data.direction == 'up' %}<span style="color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</span>
+                        {% elif data.direction == 'down' %}<span style="color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</span>
+                        {% else %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</span>{% endif %}
+                      </td>
+                    </tr>
+                  </table>
+                  {% endfor %}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
+        <!-- ─── DIVIDER ─── -->
+        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+
+        <!-- ─── YIELD CURVE & RATES ─── -->
+        {% if market_snapshot.rates %}
+        <tr>
+          <td style="padding:6px 40px 2px 40px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                <td valign="middle">
+                  <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">YIELD CURVE &amp; FIXED INCOME</p>
+                </td>
+                {% if market_snapshot.derived %}
+                <td align="right" valign="middle">
+                  {% set spread_bps = market_snapshot.derived.spread_2y10y_bps %}
+                  {% if spread_bps is not none %}
+                    {% if market_snapshot.derived.yield_curve_inverted %}
+                      <span style="display:inline-block;background:#5A0A0A;border:1px solid #8A2020;color:#FF8080;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:2px;">&#9650; INVERTED &nbsp;2Y-10Y: {{ "%+d"|format(spread_bps) }}bps</span>
+                    {% else %}
+                      <span style="display:inline-block;background:#0A3A1A;border:1px solid #0A6A2A;color:#80CCA0;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:2px;">NORMAL &nbsp;2Y-10Y: {{ "%+d"|format(spread_bps) }}bps</span>
+                    {% endif %}
+                  {% endif %}
+                </td>
+                {% endif %}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 32px 8px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                {% for key in ['treasury_2y', 'treasury_5y', 'treasury_10y', 'treasury_30y'] %}
+                {% set data = market_snapshot.rates.get(key, {}) %}
+                <td valign="top" style="padding:4px 8px;text-align:center;width:25%;">
+                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label if data.label else key }}</p>
+                  {% if data.value is not none %}
+                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;">{{ "%.2f"|format(data.value) }}%</p>
+                    {% if data.change_pct is not none %}
+                      {% if data.direction == 'up' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% elif data.direction == 'down' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
+                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">&#9644; {{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
+                    {% endif %}
+                  {% else %}
+                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
+                  {% endif %}
+                </td>
+                {% endfor %}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
+        <!-- ─── DIVIDER ─── -->
+        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+
+        <!-- ─── FX & COMMODITIES ─── -->
+        {% if market_snapshot.fx or market_snapshot.commodities %}
+        <tr>
+          <td style="padding:6px 40px 2px 40px;">
+            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">FX &amp; COMMODITIES</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 32px 8px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                {% set fx_items = market_snapshot.fx.items() if market_snapshot.fx else [] %}
+                {% for key, data in fx_items %}
+                <td valign="top" style="padding:4px 5px;text-align:center;">
+                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
+                  {% if data.value is not none %}
+                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">
+                      {% if data.format == 'fx' %}{{ "%.4f"|format(data.value) }}{% else %}{{ "{:,.2f}".format(data.value) }}{% endif %}
+                    </p>
+                    {% if data.change_pct is not none %}
+                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
+                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
+                    {% endif %}
+                  {% else %}
+                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
+                  {% endif %}
+                </td>
+                {% endfor %}
+                {% set comm_keys = ['wti_crude', 'brent', 'gold', 'copper'] %}
+                {% for key in comm_keys %}
+                {% set data = market_snapshot.commodities.get(key, {}) if market_snapshot.commodities else {} %}
+                {% if data %}
+                <td valign="top" style="padding:4px 5px;text-align:center;">
+                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
+                  {% if data.value is not none %}
+                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">${{ "{:,.2f}".format(data.value) }}</p>
+                    {% if data.change_pct is not none %}
+                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
+                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
+                    {% endif %}
+                  {% else %}
+                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
+                  {% endif %}
+                </td>
+                {% endif %}
+                {% endfor %}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
+        <!-- ─── DIVIDER ─── -->
+        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+
+        <!-- ─── INTERNATIONAL & CRYPTO ─── -->
+        {% if market_snapshot.international or market_snapshot.crypto %}
+        <tr>
+          <td style="padding:6px 40px 2px 40px;">
+            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">INTERNATIONAL MARKETS &amp; DIGITAL ASSETS</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 32px 12px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                {% if market_snapshot.international %}
+                {% for key, data in market_snapshot.international.items() %}
+                <td valign="top" style="padding:4px 7px;text-align:center;">
+                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
+                  {% if data.value is not none %}
+                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">{{ "{:,.0f}".format(data.value) }}</p>
+                    {% if data.change_pct is not none %}
+                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
+                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
+                    {% endif %}
+                  {% else %}
+                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
+                  {% endif %}
+                </td>
+                {% endfor %}
+                {% endif %}
+                {% if market_snapshot.crypto %}
+                {% for key, data in market_snapshot.crypto.items() %}
+                <td valign="top" style="padding:4px 7px;text-align:center;">
+                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
+                  {% if data.value is not none %}
+                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">${{ "{:,.0f}".format(data.value) }}</p>
+                    {% if data.change_pct is not none %}
+                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
+                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
+                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
+                    {% endif %}
+                  {% else %}
+                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
+                  {% endif %}
+                </td>
+                {% endfor %}
+                {% endif %}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
+        <!-- ─── CLOSING DIVIDER ─── -->
+        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+
       </table>
     </td>
   </tr>
@@ -154,6 +372,26 @@
             </p>
           </td>
         </tr>
+
+        <!-- Bottom line callout -->
+        {% if section.bottom_line %}
+        <tr>
+          <td class="section-pad" style="padding:18px 40px 0 40px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F4F7FA;border-left:3px solid {{ section.color }};border-radius:2px;">
+              <tr>
+                <td style="padding:12px 16px;">
+                  <p style="margin:0 0 3px 0;color:{{ section.color }};font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">
+                    Bottom Line
+                  </p>
+                  <p style="margin:0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;font-weight:600;">
+                    {{ section.bottom_line }}
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endif %}
 
         <!-- Narrative -->
         {% if section.narrative %}

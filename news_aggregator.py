@@ -155,28 +155,77 @@ NEWSAPI_QUERIES: dict[str, str] = {
 
 # FRED series to pull
 FRED_SERIES: dict[str, str] = {
-    "fed_funds_rate": "FEDFUNDS",
-    "cpi_yoy": "CPIAUCSL",
-    "core_cpi": "CPILFESL",
-    "unemployment": "UNRATE",
-    "gdp_growth": "GDP",
+    "fed_funds_rate":     "FEDFUNDS",
+    "cpi_yoy":            "CPIAUCSL",
+    "core_cpi":           "CPILFESL",
+    "core_pce":           "PCEPILFE",
+    "unemployment":       "UNRATE",
+    "gdp_growth":         "GDP",
+    "real_gdp_growth":    "A191RL1Q225SBEA",
     "yield_spread_10y2y": "T10Y2Y",
-    "mortgage_30y": "MORTGAGE30US",
+    "mortgage_30y":       "MORTGAGE30US",
+    "ppi":                "PPIACO",
+    "industrial_prod":    "INDPRO",
+    "retail_sales":       "RSXFS",
+    "housing_starts":     "HOUST",
 }
 
-# Tickers: (stooq_symbol, yahoo_symbol, label, format)
-MARKET_TICKERS: dict[str, tuple[str, str, str, str]] = {
-    "sp500":       ("^spx",   "^GSPC",    "S&P 500",      "index"),
-    "nasdaq":      ("^ndq",   "^NDX",     "NASDAQ 100",   "index"),
-    "dow":         ("^dji",   "^DJI",     "Dow Jones",    "index"),
-    "russell2000": ("^rut",   "^RUT",     "Russell 2000", "index"),
-    "vix":         ("^vix",   "^VIX",     "VIX",          "index"),
-    "treasury_10y":("10us.b", "^TNX",     "10Y Treasury", "yield"),
-    "wti_crude":   ("cl.f",   "CL=F",     "WTI Crude",    "price"),
-    "gold":        ("xauusd", "GC=F",     "Gold",         "price"),
-    "eurusd":      ("eurusd", "EURUSD=X", "EUR/USD",      "fx"),
-    "btc":         ("btcusd", "BTC-USD",  "Bitcoin",      "crypto"),
+# Tickers organized by group: (stooq_symbol, yahoo_symbol, label, format)
+TICKER_GROUPS: dict[str, dict[str, tuple[str, str, str, str]]] = {
+    "primary": {
+        "sp500":       ("^spx",    "^GSPC",     "S&P 500",        "index"),
+        "nasdaq":      ("^ndq",    "^NDX",      "NASDAQ 100",     "index"),
+        "dow":         ("^dji",    "^DJI",      "Dow Jones",      "index"),
+        "russell2000": ("^rut",    "^RUT",      "Russell 2000",   "index"),
+        "vix":         ("^vix",    "^VIX",      "VIX",            "index"),
+    },
+    "sectors": {
+        "xlk":  ("xlk.us",  "XLK",  "Technology",     "index"),
+        "xlf":  ("xlf.us",  "XLF",  "Financials",     "index"),
+        "xle":  ("xle.us",  "XLE",  "Energy",         "index"),
+        "xlv":  ("xlv.us",  "XLV",  "Health Care",    "index"),
+        "xli":  ("xli.us",  "XLI",  "Industrials",    "index"),
+        "xlb":  ("xlb.us",  "XLB",  "Materials",      "index"),
+        "xlp":  ("xlp.us",  "XLP",  "Cons. Staples",  "index"),
+        "xly":  ("xly.us",  "XLY",  "Cons. Discret.", "index"),
+        "xlu":  ("xlu.us",  "XLU",  "Utilities",      "index"),
+        "xlre": ("xlre.us", "XLRE", "Real Estate",    "index"),
+        "xlc":  ("xlc.us",  "XLC",  "Comm. Services", "index"),
+    },
+    "rates": {
+        "treasury_2y":  ("2us.b",  "^IRX",  "2Y Treasury",  "yield"),
+        "treasury_5y":  ("5us.b",  "^FVX",  "5Y Treasury",  "yield"),
+        "treasury_10y": ("10us.b", "^TNX",  "10Y Treasury", "yield"),
+        "treasury_30y": ("30us.b", "^TYX",  "30Y Treasury", "yield"),
+    },
+    "fx": {
+        "dxy":    ("dxy",    "DX-Y.NYB", "DXY",    "index"),
+        "eurusd": ("eurusd", "EURUSD=X", "EUR/USD", "fx"),
+        "gbpusd": ("gbpusd", "GBPUSD=X", "GBP/USD", "fx"),
+        "usdjpy": ("usdjpy", "JPY=X",    "USD/JPY", "fx"),
+    },
+    "commodities": {
+        "wti_crude": ("cl.f",   "CL=F",  "WTI Crude",  "price"),
+        "brent":     ("bz.f",   "BZ=F",  "Brent",      "price"),
+        "gold":      ("xauusd", "GC=F",  "Gold",       "price"),
+        "silver":    ("xagusd", "SI=F",  "Silver",     "price"),
+        "copper":    ("hg.f",   "HG=F",  "Copper",     "price"),
+        "nat_gas":   ("ng.f",   "NG=F",  "Nat. Gas",   "price"),
+    },
+    "international": {
+        "dax":      ("^dax",  "^GDAXI", "DAX",        "index"),
+        "ftse100":  ("^ftx",  "^FTSE",  "FTSE 100",   "index"),
+        "nikkei":   ("^nkx",  "^N225",  "Nikkei 225", "index"),
+        "hang_seng":("^hsi",  "^HSI",   "Hang Seng",  "index"),
+    },
+    "crypto": {
+        "btc": ("btcusd", "BTC-USD", "Bitcoin",  "crypto"),
+        "eth": ("ethusd", "ETH-USD", "Ethereum", "crypto"),
+    },
 }
+
+# Flat alias for backward compatibility
+MARKET_TICKERS = {k: v for g in TICKER_GROUPS.values() for k, v in g.items()}
 
 CATEGORY_KEYWORDS = SECTION_KEYWORDS  # alias used by ai_synthesizer
 
@@ -290,20 +339,33 @@ class NewsAggregator:
         d1 = start_date.strftime("%Y%m%d")
         d2 = end_date.strftime("%Y%m%d")
 
-        for key, (stooq_sym, yahoo_sym, label, fmt) in MARKET_TICKERS.items():
-            data = self._fetch_stooq_quote(stooq_sym, label, fmt, d1, d2)
-            if data is None:
-                logger.info("Stooq failed for %s, trying Yahoo Finance.", stooq_sym)
-                data = self._fetch_yahoo_quote(yahoo_sym, label, fmt)
-            if data is not None:
-                snapshot[key] = data
-                any_success = True
-            else:
-                snapshot[key] = {
-                    "label": label, "format": fmt,
-                    "value": None, "change_pct": None, "direction": "flat",
-                }
-                sources_failed.append(f"market:{key}")
+        for group_name, tickers in TICKER_GROUPS.items():
+            snapshot[group_name] = {}
+            for key, (stooq_sym, yahoo_sym, label, fmt) in tickers.items():
+                data = self._fetch_stooq_quote(stooq_sym, label, fmt, d1, d2)
+                if data is None:
+                    logger.info("Stooq failed for %s, trying Yahoo Finance.", stooq_sym)
+                    data = self._fetch_yahoo_quote(yahoo_sym, label, fmt)
+                if data is not None:
+                    snapshot[group_name][key] = data
+                    any_success = True
+                else:
+                    snapshot[group_name][key] = {
+                        "label": label, "format": fmt,
+                        "value": None, "change_pct": None, "direction": "flat",
+                    }
+                    sources_failed.append(f"market:{group_name}:{key}")
+
+        # Compute yield curve spread (2Y-10Y) as a key macro signal
+        t2y = snapshot.get("rates", {}).get("treasury_2y", {}).get("value")
+        t10y = snapshot.get("rates", {}).get("treasury_10y", {}).get("value")
+        if t2y is not None and t10y is not None:
+            spread = round(t10y - t2y, 3)
+            snapshot["derived"] = {
+                "spread_2y10y": spread,
+                "spread_2y10y_bps": round(spread * 100),
+                "yield_curve_inverted": spread < 0,
+            }
 
         if any_success:
             sources_used.append("market_data")
