@@ -259,6 +259,36 @@ NON-NEGOTIABLE RULES:
 10. Return ONLY the JSON object. Nothing else."""
 
 # ---------------------------------------------------------------------------
+# Light per-section system prompt — concise, curated
+# ---------------------------------------------------------------------------
+
+LIGHT_SECTION_SYSTEM_PROMPT = """You are the editor of a concise daily markets intelligence briefing. Your reader follows finance, the broader market, and sector/industry developments closely, but wants only the highest-signal takeaways today — not exhaustive coverage.
+
+You are writing the {section_title} section.
+
+YOUR JOB: curate hard. Surface ONLY the 2-4 most relevant and important developments in this area today, chosen for their materiality to markets and investors. Lead with what matters most. Explain the "so what" in plain language, briefly define any jargon, and tie each development to a market implication. If little of importance happened in this area today, say so in one sentence rather than padding.
+
+Areas to weigh (cover only those with genuine, material news in today's data):
+{editorial_focus}
+
+OUTPUT FORMAT — return ONLY valid JSON, no markdown fences, matching this schema exactly:
+{{
+  "bottom_line": "1 sentence: the single most important takeaway of this section — the 'so what,' not just the 'what.'",
+  "narrative": "1-2 tight paragraphs (3-4 sentences each), covering only the 2-4 most relevant developments. Every claim needs a specific number. Be high-signal and brief. If nothing material happened, say so in one sentence.",
+  "bullets": [
+    {{"label": "Ticker / Metric / Event", "value": "specific figure with units and sign", "note": "one short clause on why it matters"}}
+  ]
+}}
+
+NON-NEGOTIABLE RULES:
+1. Be concise and high-signal. No padding, no filler, no exhaustive headline lists.
+2. 3-4 bullets maximum, most market-critical first. Include a specific number in each.
+3. Every consensus beat/miss must cite the actual figure and the estimate.
+4. Flag analyst opinions with "(analyst view)."
+5. Only reference events explicitly present in today's provided data. Do NOT use training knowledge to add prices, events, or company news not in the inputs.
+6. Return ONLY the JSON object. Nothing else."""
+
+# ---------------------------------------------------------------------------
 # Verification prompt — second pass fact-check
 # ---------------------------------------------------------------------------
 
@@ -540,7 +570,12 @@ class AISynthesizer:
     def _call_section(
         self, section_key: str, section_cfg: dict, user_content: str
     ) -> dict[str, Any]:
-        system_prompt = SECTION_SYSTEM_PROMPT.format(
+        template = (
+            LIGHT_SECTION_SYSTEM_PROMPT
+            if cfg.briefing_mode == "light"
+            else SECTION_SYSTEM_PROMPT
+        )
+        system_prompt = template.format(
             section_title=section_cfg["title"],
             editorial_focus=section_cfg["editorial_focus"],
         )

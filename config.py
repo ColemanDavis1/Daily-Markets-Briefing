@@ -31,7 +31,16 @@ class Config:
         default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
     )
     claude_max_tokens: int = field(
-        default_factory=lambda: int(os.getenv("CLAUDE_MAX_TOKENS", "4096"))
+        default_factory=lambda: int(os.getenv("CLAUDE_MAX_TOKENS", "2048"))
+    )
+    # "light" = concise, curated; "full" = deep institutional analysis
+    briefing_mode: str = field(
+        default_factory=lambda: os.getenv("BRIEFING_MODE", "light").lower()
+    )
+    # Skip Saturdays and Sundays (in TIMEZONE)
+    weekdays_only: bool = field(
+        default_factory=lambda: os.getenv("WEEKDAYS_ONLY", "true").lower()
+        in ("1", "true", "yes")
     )
     verify_sections: bool = field(
         default_factory=lambda: os.getenv("VERIFY_SECTIONS", "false").lower()

@@ -39,6 +39,22 @@ _ET = ZoneInfo("America/New_York")
 _READY_FILE = Path(__file__).resolve().parent / "briefing_ready.html"
 
 
+def _should_run_today() -> bool:
+    """False on weekends when WEEKDAYS_ONLY is enabled (evaluated in the configured TZ)."""
+    if not cfg.weekdays_only:
+        return True
+    return datetime.now(_ET).weekday() < 5  # Mon=0 .. Fri=4
+
+
+def _skipped_log(mode: str) -> dict:
+    logger.info("Weekend — skipping %s (WEEKDAYS_ONLY enabled).", mode)
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "skipped_weekend",
+        "mode": mode,
+    }
+
+
 def run_pipeline(
     dry_run: bool = False,
     prepare_only: bool = False,
@@ -48,6 +64,9 @@ def run_pipeline(
 
     if send_only:
         return _send_saved()
+
+    if not dry_run and not _should_run_today():
+        return _skipped_log("prepare" if prepare_only else "pipeline")
 
     run_log: dict = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -135,6 +154,9 @@ def _missing_for_mode(*, dry_run: bool, prepare_only: bool) -> list[str]:
 
 def _send_saved() -> dict:
     """Read the prepared HTML and send it. Used by --send-only."""
+    if not _should_run_today():
+        return _skipped_log("send")
+
     run_log: dict = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "send_only": True,
