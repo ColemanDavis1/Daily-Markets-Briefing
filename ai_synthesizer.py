@@ -281,6 +281,55 @@ RULES:
 }}"""
 
 # ---------------------------------------------------------------------------
+# Robust JSON parsing
+# ---------------------------------------------------------------------------
+
+def _parse_json_object(text: str) -> dict[str, Any]:
+    """
+    Extract and parse the first complete JSON object from an LLM response.
+
+    Tolerates two common LLM quirks:
+      - trailing prose after the closing brace ("Extra data" errors)
+      - literal newlines/tabs inside string values (strict-mode failures)
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("No JSON object found in response")
+
+    depth = 0
+    in_str = False
+    escape = False
+    end = len(text)
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+
+    candidate = text[start:end]
+    # strict=False permits raw control characters (newlines, tabs) in strings.
+    return json.loads(candidate, strict=False)
+
+
+# ---------------------------------------------------------------------------
 # Retry policy
 # ---------------------------------------------------------------------------
 
@@ -548,14 +597,11 @@ class AISynthesizer:
         if not raw_text:
             raise RuntimeError("Claude returned no text")
 
-        # Re-attach the prefilled opening brace and strip any stray code fences.
+        # Re-attach the prefilled opening brace, then parse defensively.
         if not raw_text.startswith("{"):
             raw_text = "{" + raw_text
-        if raw_text.startswith("```"):
-            raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
-            raw_text = re.sub(r"\n?```$", "", raw_text)
 
-        result = json.loads(raw_text)
+        result = _parse_json_object(raw_text)
 
         bullets = result.get("bullets", [])
         if isinstance(bullets, dict):
