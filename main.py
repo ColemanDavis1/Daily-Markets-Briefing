@@ -82,7 +82,7 @@ def run_pipeline(
         )
 
         # ---- Step 2: Synthesize ----
-        logger.info("Step 2/4 — Synthesizing with Gemini (%s)...", cfg.gemini_model)
+        logger.info("Step 2/4 — Synthesizing with Claude (%s)...", cfg.claude_model)
         from ai_synthesizer import AISynthesizer
         briefing = AISynthesizer().synthesize(raw_data)
         run_log["sections_generated"] = [

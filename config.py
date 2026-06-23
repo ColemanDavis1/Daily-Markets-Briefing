@@ -24,11 +24,14 @@ def _parse_recipients(raw: str | None) -> List[str]:
 class Config:
     """Application configuration."""
 
-    google_api_key: str = field(
-        default_factory=lambda: os.getenv("GOOGLE_API_KEY", "")
+    anthropic_api_key: str = field(
+        default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", "")
     )
-    gemini_model: str = field(
-        default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    claude_model: str = field(
+        default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
+    )
+    claude_max_tokens: int = field(
+        default_factory=lambda: int(os.getenv("CLAUDE_MAX_TOKENS", "4096"))
     )
     verify_sections: bool = field(
         default_factory=lambda: os.getenv("VERIFY_SECTIONS", "false").lower()
@@ -37,8 +40,10 @@ class Config:
     verify_only_sections: List[str] = field(
         default_factory=lambda: _parse_recipients(os.getenv("VERIFY_ONLY_SECTIONS"))
     )
-    gemini_section_delay_sec: float = field(
-        default_factory=lambda: float(os.getenv("GEMINI_SECTION_DELAY_SEC", "4"))
+    section_delay_sec: float = field(
+        default_factory=lambda: float(
+            os.getenv("SECTION_DELAY_SEC", os.getenv("GEMINI_SECTION_DELAY_SEC", "1"))
+        )
     )
     sendgrid_api_key: str = field(
         default_factory=lambda: os.getenv("SENDGRID_API_KEY", "")
@@ -97,8 +102,8 @@ class Config:
     def validate_for_prepare(self) -> List[str]:
         """Settings required to aggregate, synthesize, and render."""
         errors: List[str] = []
-        if not self.google_api_key:
-            errors.append("GOOGLE_API_KEY")
+        if not self.anthropic_api_key:
+            errors.append("ANTHROPIC_API_KEY")
         return errors
 
     def validate_for_send(self) -> List[str]:

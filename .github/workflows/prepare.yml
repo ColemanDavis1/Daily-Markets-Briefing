@@ -29,11 +29,8 @@ jobs:
       - name: Aggregate, synthesize, and render
         timeout-minutes: 40
         env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash
-          VERIFY_SECTIONS: "true"
-          VERIFY_ONLY_SECTIONS: markets_macro,corporate_earnings,economic_data
-          GEMINI_SECTION_DELAY_SEC: "4"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: claude-haiku-4-5
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}

@@ -1,7 +1,7 @@
 """
-AI synthesis module — multi-call Gemini backend.
+AI synthesis module — multi-call Claude (Anthropic) backend.
 
-Makes one Gemini API call per section. Each call receives only the
+Makes one Claude API call per section. Each call receives only the
 headlines relevant to that section, producing a focused narrative +
 structured data bullets rather than a compressed single-call summary.
 """
@@ -15,7 +15,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-import google.generativeai as genai
+import anthropic
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from config import get_config
@@ -281,15 +281,17 @@ RULES:
 }}"""
 
 # ---------------------------------------------------------------------------
-# Gemini model fallback chain
+# Retry policy
 # ---------------------------------------------------------------------------
 
-_MODEL_FALLBACKS = ("gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-1.5-flash")
-
-
 def _is_retryable(exc: BaseException) -> bool:
-    err = str(exc).lower()
-    return any(x in err for x in ("503", "overloaded", "unavailable", "deadline", "429", "quota"))
+    """Retry only on transient conditions — never on auth/bad-request/credit errors."""
+    if isinstance(exc, (anthropic.RateLimitError, anthropic.APITimeoutError,
+                        anthropic.APIConnectionError, anthropic.InternalServerError)):
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code in (500, 502, 503, 504, 529)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -298,19 +300,19 @@ def _is_retryable(exc: BaseException) -> bool:
 
 class AISynthesizer:
     def __init__(self) -> None:
-        genai.configure(api_key=cfg.google_api_key)
+        self.client = anthropic.Anthropic(api_key=cfg.anthropic_api_key)
 
     def synthesize(self, raw_data: dict[str, Any]) -> dict[str, Any]:
         """
-        Run one Gemini call per section. Returns a dict keyed by section name,
+        Run one Claude call per section. Returns a dict keyed by section name,
         each containing {title, color, narrative, bullets}.
         """
         result: dict[str, Any] = {}
         first_section = True
 
         for section_key, section_cfg in SECTION_CONFIGS.items():
-            if not first_section and cfg.gemini_section_delay_sec > 0:
-                time.sleep(cfg.gemini_section_delay_sec)
+            if not first_section and cfg.section_delay_sec > 0:
+                time.sleep(cfg.section_delay_sec)
             first_section = False
 
             logger.info("Synthesizing section: %s", section_cfg["title"])
@@ -320,8 +322,8 @@ class AISynthesizer:
                 )
                 output = self._call_section(section_key, section_cfg, section_data)
                 if _should_verify(section_key):
-                    if cfg.gemini_section_delay_sec > 0:
-                        time.sleep(cfg.gemini_section_delay_sec)
+                    if cfg.section_delay_sec > 0:
+                        time.sleep(cfg.section_delay_sec)
                     verified = self._verify_section(
                         section_key, section_cfg, section_data, output
                     )
@@ -493,25 +495,7 @@ class AISynthesizer:
             section_title=section_cfg["title"],
             editorial_focus=section_cfg["editorial_focus"],
         )
-
-        models_to_try = []
-        for m in (cfg.gemini_model, *_MODEL_FALLBACKS):
-            if m and m not in models_to_try:
-                models_to_try.append(m)
-
-        last_exc: Exception | None = None
-        for model_name in models_to_try:
-            try:
-                return self._generate(model_name, system_prompt, user_content)
-            except Exception as exc:
-                last_exc = exc
-                err = str(exc).lower()
-                if any(x in err for x in ("404", "not found", "no longer available")):
-                    logger.warning("Model %s not available, trying next.", model_name)
-                    continue
-                raise
-
-        raise last_exc or RuntimeError("No Gemini models available")
+        return self._generate(system_prompt, user_content, temperature=0.4)
 
     def _verify_section(
         self,
@@ -528,39 +512,11 @@ class AISynthesizer:
                 + "\n\nGENERATED CONTENT TO VERIFY:\n"
                 + json.dumps(generated, ensure_ascii=False)
             )
-            models_to_try = []
-            for m in (cfg.gemini_model, *_MODEL_FALLBACKS):
-                if m and m not in models_to_try:
-                    models_to_try.append(m)
-
-            for model_name in models_to_try:
-                try:
-                    model = genai.GenerativeModel(
-                        model_name=model_name,
-                        system_instruction=VERIFY_SYSTEM_PROMPT,
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        temperature=0.1,
-                        max_output_tokens=8192,
-                    ),
-                    )
-                    response = model.generate_content(user_content)
-                    raw = response.text.strip()
-                    if raw.startswith("```"):
-                        raw = re.sub(r"^```[a-z]*\n?", "", raw)
-                        raw = re.sub(r"\n?```$", "", raw)
-                    verified = json.loads(raw)
-                    bullets = verified.get("bullets", [])
-                    if isinstance(bullets, dict):
-                        bullets = [bullets]
-                    verified["bullets"] = bullets
-                    logger.info("  Verified section: %s", section_cfg["title"])
-                    return verified
-                except Exception as exc:
-                    err = str(exc).lower()
-                    if any(x in err for x in ("404", "not found", "no longer available")):
-                        continue
-                    raise
+            verified = self._generate(
+                VERIFY_SYSTEM_PROMPT, user_content, temperature=0.1
+            )
+            logger.info("  Verified section: %s", section_cfg["title"])
+            return verified
         except Exception as exc:
             logger.warning("Verification failed for %s, using original: %s", section_key, exc)
         return generated
@@ -568,46 +524,50 @@ class AISynthesizer:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=15, max=60),
+        wait=wait_exponential(multiplier=2, min=4, max=30),
         reraise=True,
     )
     def _generate(
-        self, model_name: str, system_prompt: str, user_content: str
+        self, system_prompt: str, user_content: str, temperature: float = 0.4
     ) -> dict[str, Any]:
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=system_prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                temperature=0.4,
-                max_output_tokens=8192,
-            ),
+        # Prefilling the assistant turn with "{" forces JSON-only output.
+        response = self.client.messages.create(
+            model=cfg.claude_model,
+            max_tokens=cfg.claude_max_tokens,
+            temperature=temperature,
+            system=system_prompt,
+            messages=[
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": "{"},
+            ],
         )
 
-        response = model.generate_content(user_content)
+        raw_text = "".join(
+            block.text for block in response.content if block.type == "text"
+        ).strip()
+        if not raw_text:
+            raise RuntimeError("Claude returned no text")
 
-        try:
-            raw_text = response.text.strip()
-        except (ValueError, AttributeError) as exc:
-            raise RuntimeError(f"Gemini returned no text: {exc}") from exc
-
+        # Re-attach the prefilled opening brace and strip any stray code fences.
+        if not raw_text.startswith("{"):
+            raw_text = "{" + raw_text
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
             raw_text = re.sub(r"\n?```$", "", raw_text)
 
         result = json.loads(raw_text)
 
-        # Normalise bullets
         bullets = result.get("bullets", [])
         if isinstance(bullets, dict):
             bullets = [bullets]
         result["bullets"] = bullets
 
+        usage = getattr(response, "usage", None)
         logger.info(
             "  %s — %s tokens in / %s tokens out",
-            model_name,
-            getattr(response.usage_metadata, "prompt_token_count", "?"),
-            getattr(response.usage_metadata, "candidates_token_count", "?"),
+            cfg.claude_model,
+            getattr(usage, "input_tokens", "?"),
+            getattr(usage, "output_tokens", "?"),
         )
 
         return result
