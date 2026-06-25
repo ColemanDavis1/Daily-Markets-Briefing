@@ -115,6 +115,10 @@ def run_pipeline(
         html = EmailRenderer().render(
             market_snapshot=raw_data.get("market_snapshot", {}),
             briefing=briefing,
+            macro_data=raw_data.get("macro_data", {}),
+            earnings_calendar=raw_data.get("earnings_calendar", []),
+            economic_calendar=raw_data.get("economic_calendar", []),
+            sec_filings=raw_data.get("sec_filings", []),
         )
 
         if dry_run:

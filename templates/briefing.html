@@ -248,7 +248,7 @@
           </td>
         </tr>
         <tr>
-          <td style="padding:4px 32px 8px 32px;">
+          <td style="padding:4px 32px 4px 32px;">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
               <tr>
                 {% set fx_items = market_snapshot.fx.items() if market_snapshot.fx else [] %}
@@ -269,10 +269,16 @@
                   {% endif %}
                 </td>
                 {% endfor %}
-                {% set comm_keys = ['wti_crude', 'brent', 'gold', 'silver', 'copper'] %}
-                {% for key in comm_keys %}
-                {% set data = market_snapshot.commodities.get(key, {}) if market_snapshot.commodities else {} %}
-                {% if data %}
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% if market_snapshot.commodities %}
+        <tr>
+          <td style="padding:0 32px 8px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                {% for key, data in market_snapshot.commodities.items() %}
                 <td valign="top" style="padding:4px 5px;text-align:center;">
                   <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
                   {% if data.value is not none %}
@@ -286,12 +292,12 @@
                     <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
                   {% endif %}
                 </td>
-                {% endif %}
                 {% endfor %}
               </tr>
             </table>
           </td>
         </tr>
+        {% endif %}
         {% endif %}
 
         <!-- ─── DIVIDER ─── -->
@@ -348,9 +354,158 @@
         </tr>
         {% endif %}
 
+        <!-- ─── DIVIDER ─── -->
+        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
+
+        <!-- ─── FRED MACRO INDICATORS ─── -->
+        {% if macro_items %}
+        <tr>
+          <td style="padding:6px 40px 2px 40px;">
+            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">MACRO INDICATORS (FRED)</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 32px 12px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              {% set mid = ((macro_items | length) + 1) // 2 %}
+              <tr>
+                <td width="49%" valign="top">
+                  {% for item in macro_items[:mid] %}
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:3px;">
+                    <tr>
+                      <td style="padding:2px 4px;">
+                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ item.label }}</span>
+                      </td>
+                      <td align="right" style="padding:2px 4px;">
+                        <span style="color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">{{ "{:,.2f}".format(item.value) }}</span>
+                        {% if item.date %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;"> &nbsp;({{ item.date }})</span>{% endif %}
+                      </td>
+                    </tr>
+                  </table>
+                  {% endfor %}
+                </td>
+                <td width="2%" style="background:#1A2F4A;">&nbsp;</td>
+                <td width="49%" valign="top">
+                  {% for item in macro_items[mid:] %}
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:3px;">
+                    <tr>
+                      <td style="padding:2px 4px;">
+                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ item.label }}</span>
+                      </td>
+                      <td align="right" style="padding:2px 4px;">
+                        <span style="color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">{{ "{:,.2f}".format(item.value) }}</span>
+                        {% if item.date %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;"> &nbsp;({{ item.date }})</span>{% endif %}
+                      </td>
+                    </tr>
+                  </table>
+                  {% endfor %}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
         <!-- ─── CLOSING DIVIDER ─── -->
         <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
 
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- DATA CALENDARS (already pulled — shown for reference)       -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  {% if economic_calendar %}
+  <tr>
+    <td style="background:#F0F4F8;padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td style="background:#0A3A2A;padding:8px 40px;">
+            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">ECONOMIC CALENDAR</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 40px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              {% for e in economic_calendar %}
+              <tr>
+                <td style="padding:4px 0;border-bottom:1px solid #E0E6ED;">
+                  <p style="margin:0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;">{{ e.get('event', 'Event') }}</p>
+                  <p style="margin:2px 0 0 0;color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">
+                    {% if e.get('country') %}{{ e.get('country') }} &nbsp;|&nbsp; {% endif %}
+                    Impact: {{ e.get('impact', 'N/A') }} &nbsp;|&nbsp;
+                    Actual: {{ e.get('actual') if e.get('actual') is not none and e.get('actual') != '' else 'pending' }} &nbsp;|&nbsp;
+                    Est: {{ e.get('estimate') if e.get('estimate') is not none and e.get('estimate') != '' else 'N/A' }} &nbsp;|&nbsp;
+                    Prior: {{ e.get('prev') if e.get('prev') is not none and e.get('prev') != '' else 'N/A' }}
+                  </p>
+                </td>
+              </tr>
+              {% endfor %}
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  {% if earnings_calendar %}
+  <tr>
+    <td style="background:#FFFFFF;padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td style="background:#1A3A5C;padding:8px 40px;">
+            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">UPCOMING EARNINGS (NEXT 7 DAYS)</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 40px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              {% for e in earnings_calendar %}
+              <tr>
+                <td width="15%" style="padding:3px 0;border-bottom:1px solid #E0E6ED;">
+                  <span style="color:#0A4A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;">{{ e.get('symbol', '') }}</span>
+                </td>
+                <td width="15%" style="padding:3px 0;border-bottom:1px solid #E0E6ED;">
+                  <span style="color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ e.get('date', '') }}</span>
+                </td>
+                <td style="padding:3px 0;border-bottom:1px solid #E0E6ED;">
+                  <span style="color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">
+                    {% if e.get('epsEstimate') is not none %}EPS est: ${{ "%.2f"|format(e.get('epsEstimate')) }}{% endif %}
+                    {% if e.get('revenueEstimate') is not none and e.get('revenueEstimate') > 1e8 %} &nbsp;|&nbsp; Rev est: ${{ "%.1f"|format(e.get('revenueEstimate') / 1e9) }}B{% endif %}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  {% if sec_filings %}
+  <tr>
+    <td style="background:#F8F9FB;padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td style="background:#3A2A6A;padding:8px 40px;">
+            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">SEC 8-K FILINGS TODAY</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 40px;">
+            {% for f in sec_filings %}
+            <p style="margin:0 0 4px 0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">
+              <span style="font-weight:600;">{{ f.get('entity', 'Unknown') }}</span>
+              <span style="color:#5A6A7A;"> &mdash; {{ f.get('form_type', '8-K') }}</span>
+            </p>
+            {% endfor %}
+          </td>
+        </tr>
       </table>
     </td>
   </tr>
