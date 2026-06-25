@@ -33,9 +33,10 @@ class Config:
     claude_max_tokens: int = field(
         default_factory=lambda: int(os.getenv("CLAUDE_MAX_TOKENS", "2048"))
     )
-    # "light" = concise, curated; "full" = deep institutional analysis
+    # "digest" = zero Claude calls, headlines + data feeds only
+    # "light" = concise AI analysis (9 calls/run); "full" = deep analysis
     briefing_mode: str = field(
-        default_factory=lambda: os.getenv("BRIEFING_MODE", "light").lower()
+        default_factory=lambda: os.getenv("BRIEFING_MODE", "digest").lower()
     )
     # Skip Saturdays and Sundays (in TIMEZONE)
     weekdays_only: bool = field(
@@ -111,9 +112,12 @@ class Config:
     def validate_for_prepare(self) -> List[str]:
         """Settings required to aggregate, synthesize, and render."""
         errors: List[str] = []
-        if not self.anthropic_api_key:
+        if self.briefing_mode != "digest" and not self.anthropic_api_key:
             errors.append("ANTHROPIC_API_KEY")
         return errors
+
+    def uses_claude(self) -> bool:
+        return self.briefing_mode not in ("digest", "data")
 
     def validate_for_send(self) -> List[str]:
         """Settings required to deliver email."""

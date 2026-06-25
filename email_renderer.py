@@ -37,6 +37,7 @@ class EmailRenderer:
         earnings_calendar: list[dict[str, Any]] | None = None,
         economic_calendar: list[dict[str, Any]] | None = None,
         sec_filings: list[dict[str, Any]] | None = None,
+        ma_headlines: list[dict[str, Any]] | None = None,
     ) -> str:
         template = self.env.get_template("briefing.html")
         context = _build_context(
@@ -47,6 +48,7 @@ class EmailRenderer:
             earnings_calendar=earnings_calendar or [],
             economic_calendar=economic_calendar or [],
             sec_filings=sec_filings or [],
+            ma_headlines=ma_headlines or [],
         )
         html = template.render(**context)
         logger.info("Email rendered (%d characters).", len(html))
@@ -79,6 +81,7 @@ def _build_context(
     earnings_calendar: list[dict[str, Any]],
     economic_calendar: list[dict[str, Any]],
     sec_filings: list[dict[str, Any]],
+    ma_headlines: list[dict[str, Any]],
 ) -> dict[str, Any]:
     day_of_week = now.strftime("%A")
     date_long = now.strftime("%B %d, %Y")
@@ -129,6 +132,7 @@ def _build_context(
         "earnings_calendar": earnings_calendar[:20],
         "economic_calendar": economic_calendar[:15],
         "sec_filings": sec_filings[:10],
+        "ma_headlines": ma_headlines[:12],
         "sections": sections,
         "sources_list": ", ".join(sources),
     }

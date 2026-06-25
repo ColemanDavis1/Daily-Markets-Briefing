@@ -417,6 +417,37 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
   <!-- DATA CALENDARS (already pulled — shown for reference)       -->
   <!-- ═══════════════════════════════════════════════════════════ -->
+  {% if ma_headlines %}
+  <tr>
+    <td style="background:#FFFFFF;padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td style="background:#1A3A5C;padding:8px 40px;">
+            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">M&amp;A &amp; CORPORATE DEALS</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 40px;">
+            {% for h in ma_headlines %}
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:8px;">
+              <tr>
+                <td style="padding:6px 0;border-bottom:1px solid #E0E6ED;">
+                  <p style="margin:0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;">{{ h.get('headline', '') }}</p>
+                  {% if h.get('summary') %}
+                  <p style="margin:4px 0 0 0;color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;line-height:1.45;">{{ h.get('summary')[:280] }}</p>
+                  {% endif %}
+                  <p style="margin:4px 0 0 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;">{{ h.get('source', '') }}</p>
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
   {% if economic_calendar %}
   <tr>
     <td style="background:#F0F4F8;padding:0;">

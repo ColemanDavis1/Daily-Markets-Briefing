@@ -100,10 +100,15 @@ def run_pipeline(
             len(run_log["sources_failed"]),
         )
 
-        # ---- Step 2: Synthesize ----
-        logger.info("Step 2/4 — Synthesizing with Claude (%s)...", cfg.claude_model)
-        from ai_synthesizer import AISynthesizer
-        briefing = AISynthesizer().synthesize(raw_data)
+        # ---- Step 2: Synthesize or compile digest ----
+        if cfg.uses_claude():
+            logger.info("Step 2/4 — Synthesizing with Claude (%s)...", cfg.claude_model)
+            from ai_synthesizer import AISynthesizer
+            briefing = AISynthesizer().synthesize(raw_data)
+        else:
+            logger.info("Step 2/4 — Compiling digest from data feeds (no Claude calls)...")
+            from ai_synthesizer import compile_digest
+            briefing = compile_digest(raw_data)
         run_log["sections_generated"] = [
             k for k in briefing if k not in ("sources_used", "generation_notes")
         ]
@@ -112,6 +117,7 @@ def run_pipeline(
         # ---- Step 3: Render ----
         logger.info("Step 3/4 — Rendering HTML email template...")
         from email_renderer import EmailRenderer
+        from ai_synthesizer import extract_ma_headlines
         html = EmailRenderer().render(
             market_snapshot=raw_data.get("market_snapshot", {}),
             briefing=briefing,
@@ -119,6 +125,7 @@ def run_pipeline(
             earnings_calendar=raw_data.get("earnings_calendar", []),
             economic_calendar=raw_data.get("economic_calendar", []),
             sec_filings=raw_data.get("sec_filings", []),
+            ma_headlines=extract_ma_headlines(raw_data),
         )
 
         if dry_run:

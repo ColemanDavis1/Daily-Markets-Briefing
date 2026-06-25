@@ -655,6 +655,97 @@ class AISynthesizer:
 
 
 # ---------------------------------------------------------------------------
+# Digest mode — zero Claude calls, headlines + data feeds only
+# ---------------------------------------------------------------------------
+
+_MA_KEYWORDS = (
+    "merger", "acquisition", "acquire", "acquires", "buyout", "m&a",
+    "takeover", "take-private", "deal", "lbo", "spinoff", "divest",
+)
+
+
+def extract_ma_headlines(raw_data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pull M&A-focused headlines from Finnhub merger feed and keyword matches."""
+    seen: set[str] = set()
+    items: list[dict[str, Any]] = []
+    for section_headlines in raw_data.get("sections", {}).values():
+        for h in section_headlines:
+            fp = h.get("fingerprint") or h.get("headline", "")
+            if fp in seen:
+                continue
+            source = h.get("source", "").lower()
+            text = f"{h.get('headline', '')} {h.get('summary', '')}".lower()
+            if source == "finnhub:merger" or any(k in text for k in _MA_KEYWORDS):
+                seen.add(fp)
+                items.append(h)
+    return items[:15]
+
+
+def compile_digest(raw_data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build all briefing sections from routed headlines — no Claude API calls.
+    Uses Finnhub, RSS, and other feeds already collected in raw_data.
+    """
+    result: dict[str, Any] = {}
+    for section_key, section_cfg in SECTION_CONFIGS.items():
+        result[section_key] = _digest_section(section_key, section_cfg, raw_data)
+    return result
+
+
+def _digest_section(
+    section_key: str,
+    section_cfg: dict,
+    raw_data: dict[str, Any],
+) -> dict[str, Any]:
+    sections = raw_data.get("sections", {})
+    headlines = list(sections.get(section_key, []))
+
+    if section_key == "what_to_watch":
+        headlines = []
+        for items in sections.values():
+            headlines.extend(items[:3])
+        headlines = headlines[:12]
+
+    bullets = [
+        {
+            "label": item.get("headline", "Headline"),
+            "value": item.get("source", ""),
+            "note": (item.get("summary") or "")[:220],
+        }
+        for item in headlines[:8]
+    ]
+
+    if headlines:
+        lead = headlines[0]
+        lead_headline = lead.get("headline", "").rstrip(".")
+        lead_summary = (lead.get("summary") or "").strip()
+        bottom_line = lead_headline
+        parts = [f"Lead story: {lead_headline}."]
+        if lead_summary:
+            parts.append(lead_summary)
+        if len(headlines) > 1:
+            parts.append(
+                "Also today: "
+                + "; ".join(
+                    h.get("headline", "") for h in headlines[1:4] if h.get("headline")
+                )
+                + "."
+            )
+        narrative = " ".join(parts)
+    else:
+        narrative = "No major headlines in this area today."
+        bottom_line = "Quiet session for this coverage area."
+
+    return {
+        "title": section_cfg["title"],
+        "color": section_cfg["color"],
+        "bottom_line": bottom_line[:280],
+        "narrative": narrative[:1400],
+        "bullets": bullets,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
