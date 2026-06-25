@@ -269,7 +269,7 @@
                   {% endif %}
                 </td>
                 {% endfor %}
-                {% set comm_keys = ['wti_crude', 'brent', 'gold', 'copper'] %}
+                {% set comm_keys = ['wti_crude', 'brent', 'gold', 'silver', 'copper'] %}
                 {% for key in comm_keys %}
                 {% set data = market_snapshot.commodities.get(key, {}) if market_snapshot.commodities else {} %}
                 {% if data %}

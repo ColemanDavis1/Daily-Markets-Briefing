@@ -65,7 +65,7 @@ class EmailSender:
         self, subject: str, html: str, recipients: list[str]
     ) -> dict[str, Any]:
         from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import Mail, Email, To, Content
+        from sendgrid.helpers.mail import Mail, Email, To, Bcc, Content
 
         sg = SendGridAPIClient(api_key=cfg.sendgrid_api_key)
 
@@ -74,7 +74,9 @@ class EmailSender:
             subject=subject,
         )
         message.content = [Content("text/html", html)]
-        message.to = [To(email=r) for r in recipients]
+        # BCC so recipients cannot see each other's addresses.
+        message.to = [To(email=cfg.sender_email)]
+        message.bcc = [Bcc(email=r) for r in recipients]
 
         response = sg.send(message)
 
@@ -103,7 +105,8 @@ class EmailSender:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = from_addr
-        msg["To"] = ", ".join(recipients)
+        # BCC-only delivery: recipients are not listed in To/Cc headers.
+        msg["To"] = "undisclosed-recipients:;"
 
         msg.attach(MIMEText(html, "html", "utf-8"))
 
