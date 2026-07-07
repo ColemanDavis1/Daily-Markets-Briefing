@@ -432,6 +432,14 @@ class NewsAggregator:
         if not cfg.fred_api_key:
             logger.info("FRED_API_KEY not set — skipping FRED.")
             return {}
+        if len(cfg.fred_api_key) != 32:
+            logger.error(
+                "FRED_API_KEY must be a 32-character key from fredaccount.stlouisfed.org "
+                "(got length %d). Macro indicators will be skipped.",
+                len(cfg.fred_api_key),
+            )
+            sources_failed.append("fred:invalid_api_key")
+            return {}
 
         macro: dict[str, Any] = {}
         base = "https://api.stlouisfed.org/fred/series/observations"
@@ -460,6 +468,18 @@ class NewsAggregator:
                         "date": latest.get("date", ""),
                         "prev_value": float(prev["value"]) if prev and prev.get("value", ".") != "." else None,
                     }
+            except requests.HTTPError as exc:
+                detail = ""
+                if exc.response is not None:
+                    try:
+                        detail = exc.response.json().get("error_message", "")
+                    except Exception:
+                        detail = exc.response.text[:200]
+                logger.warning(
+                    "FRED fetch failed for %s: %s %s",
+                    series_id, exc, detail,
+                )
+                sources_failed.append(f"fred:{series_id}")
             except Exception as exc:
                 logger.warning("FRED fetch failed for %s: %s", series_id, exc)
                 sources_failed.append(f"fred:{series_id}")

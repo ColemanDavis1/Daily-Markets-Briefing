@@ -106,7 +106,7 @@ def run_pipeline(
             from ai_synthesizer import AISynthesizer
             briefing = AISynthesizer().synthesize(raw_data)
         else:
-            logger.info("Step 2/4 — Compiling digest from data feeds (no Claude calls)...")
+            logger.info("Step 2/4 — Compiling digest from data feeds...")
             from ai_synthesizer import compile_digest
             briefing = compile_digest(raw_data)
         run_log["sections_generated"] = [

@@ -33,10 +33,21 @@ class Config:
     claude_max_tokens: int = field(
         default_factory=lambda: int(os.getenv("CLAUDE_MAX_TOKENS", "2048"))
     )
-    # "digest" = zero Claude calls, headlines + data feeds only
+    # "digest" = headlines + data feeds (optional one-line insight per section)
     # "light" = concise AI analysis (9 calls/run); "full" = deep analysis
     briefing_mode: str = field(
-        default_factory=lambda: os.getenv("BRIEFING_MODE", "digest").lower()
+        default_factory=lambda: os.getenv("BRIEFING_MODE", "light").lower()
+    )
+    # In digest mode, add one short Claude-generated insight per section that
+    # interprets the data/headlines the feeds pulled. ~9 small calls/run.
+    # Degrades silently to a plain digest if ANTHROPIC_API_KEY is absent.
+    digest_insights: bool = field(
+        default_factory=lambda: os.getenv("DIGEST_INSIGHTS", "true").lower()
+        in ("1", "true", "yes")
+    )
+    # Max output tokens for a single digest insight (kept small and cheap)
+    insight_max_tokens: int = field(
+        default_factory=lambda: int(os.getenv("INSIGHT_MAX_TOKENS", "220"))
     )
     # Skip Saturdays and Sundays (in TIMEZONE)
     weekdays_only: bool = field(
@@ -92,7 +103,7 @@ class Config:
         default_factory=lambda: os.getenv("FINNHUB_API_KEY", "")
     )
     fred_api_key: str = field(
-        default_factory=lambda: os.getenv("FRED_API_KEY", "")
+        default_factory=lambda: os.getenv("FRED_API_KEY", "").strip()
     )
     news_api_key: str = field(
         default_factory=lambda: os.getenv("NEWS_API_KEY", "")

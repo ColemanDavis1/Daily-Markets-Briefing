@@ -266,7 +266,7 @@ LIGHT_SECTION_SYSTEM_PROMPT = """You are the editor of a concise daily markets i
 
 You are writing the {section_title} section.
 
-YOUR JOB: curate hard. Surface ONLY the 2-4 most relevant and important developments in this area today, chosen for their materiality to markets and investors. Lead with what matters most. Explain the "so what" in plain language, briefly define any jargon, and tie each development to a market implication. If little of importance happened in this area today, say so in one sentence rather than padding.
+YOUR JOB: curate hard. Surface ONLY the 2-4 most relevant and important developments in this area today, chosen for their materiality to markets and investors. Lead with what matters most. Explain the "so what" in plain language — never restate a headline verbatim; translate each development into what it means and why it moved. Briefly define any jargon and tie each development to a market implication. If little of importance happened in this area today, say so in one sentence rather than padding.
 
 Areas to weigh (cover only those with genuine, material news in today's data):
 {editorial_focus}
@@ -274,7 +274,7 @@ Areas to weigh (cover only those with genuine, material news in today's data):
 OUTPUT FORMAT — return ONLY valid JSON, no markdown fences, matching this schema exactly:
 {{
   "bottom_line": "1 sentence: the single most important takeaway of this section — the 'so what,' not just the 'what.'",
-  "narrative": "1-2 tight paragraphs (3-4 sentences each), covering only the 2-4 most relevant developments. Every claim needs a specific number. Be high-signal and brief. If nothing material happened, say so in one sentence.",
+  "narrative": "1-2 tight paragraphs (3-4 sentences each), covering only the 2-4 most relevant developments. Synthesize into a thesis — do not list headlines sequentially. Every claim needs a specific number. Be high-signal and brief. If nothing material happened, say so in one sentence.",
   "bullets": [
     {{"label": "Ticker / Metric / Event", "value": "specific figure with units and sign", "note": "one short clause on why it matters"}}
   ]
@@ -287,6 +287,22 @@ NON-NEGOTIABLE RULES:
 4. Flag analyst opinions with "(analyst view)."
 5. Only reference events explicitly present in today's provided data. Do NOT use training knowledge to add prices, events, or company news not in the inputs.
 6. Return ONLY the JSON object. Nothing else."""
+
+# ---------------------------------------------------------------------------
+# Digest insight prompt — one short, data-grounded interpretation per section
+# ---------------------------------------------------------------------------
+
+INSIGHT_SYSTEM_PROMPT = """You are a markets strategist adding a single sharp insight to the {section_title} section of a daily briefing assembled from live market data and headlines.
+
+The reader can already see the prices, macro readings, and headlines. Your job is to tell them what those data points TOGETHER signal that is not obvious from any single line — the trend, the tension, the divergence, or the "so what."
+
+RULES:
+1. 1-2 sentences, under 45 words. Lead with the signal, not a recap.
+2. Reference at least one concrete figure from the provided data (a price move, level, spread, or macro reading).
+3. Ground every claim strictly in the data and headlines provided. Never invent prices, events, or company news.
+4. Plain text only — no JSON, no markdown, no labels or preamble like "Insight:".
+5. If today's data is too thin for a real read, return one sentence noting it was a quiet session for this area.
+6. Write with authority and no hedging or filler."""
 
 # ---------------------------------------------------------------------------
 # Verification prompt — second pass fact-check
@@ -653,6 +669,52 @@ class AISynthesizer:
 
         return result
 
+    # ------------------------------------------------------------------
+    # Digest insight — one short, data-grounded interpretation per section
+    # ------------------------------------------------------------------
+
+    def generate_insight(
+        self, section_key: str, section_cfg: dict, raw_data: dict[str, Any]
+    ) -> str:
+        """A single sentence interpreting the section's data. '' on failure."""
+        try:
+            user_content = self._build_section_input(
+                section_key, section_cfg, raw_data
+            )
+            system_prompt = INSIGHT_SYSTEM_PROMPT.format(
+                section_title=section_cfg["title"]
+            )
+            return _clean_insight(self._generate_insight_text(system_prompt, user_content))
+        except Exception as exc:
+            logger.warning("Digest insight failed for %s: %s", section_key, exc)
+            return ""
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=4, max=30),
+        reraise=True,
+    )
+    def _generate_insight_text(self, system_prompt: str, user_content: str) -> str:
+        response = self.client.messages.create(
+            model=cfg.claude_model,
+            max_tokens=cfg.insight_max_tokens,
+            temperature=0.3,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        text = "".join(
+            block.text for block in response.content if block.type == "text"
+        ).strip()
+        usage = getattr(response, "usage", None)
+        logger.info(
+            "  insight (%s) — %s tokens in / %s tokens out",
+            cfg.claude_model,
+            getattr(usage, "input_tokens", "?"),
+            getattr(usage, "output_tokens", "?"),
+        )
+        return text
+
 
 # ---------------------------------------------------------------------------
 # Digest mode — zero Claude calls, headlines + data feeds only
@@ -683,12 +745,39 @@ def extract_ma_headlines(raw_data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def compile_digest(raw_data: dict[str, Any]) -> dict[str, Any]:
     """
-    Build all briefing sections from routed headlines — no Claude API calls.
+    Build all briefing sections from routed headlines — no full AI synthesis.
     Uses Finnhub, RSS, and other feeds already collected in raw_data.
+
+    When DIGEST_INSIGHTS is enabled and an Anthropic key is present, each
+    section also gets one short Claude-generated insight interpreting that
+    section's data. Without a key, it degrades silently to a plain digest.
     """
+    synthesizer = None
+    if cfg.digest_insights:
+        if cfg.anthropic_api_key:
+            try:
+                synthesizer = AISynthesizer()
+                logger.info("Digest insights enabled — adding one Claude insight per section.")
+            except Exception as exc:
+                logger.warning("Digest insights disabled — could not init Claude: %s", exc)
+        else:
+            logger.info(
+                "DIGEST_INSIGHTS is on but ANTHROPIC_API_KEY is missing — "
+                "compiling a plain digest without insights."
+            )
+
     result: dict[str, Any] = {}
+    first = True
     for section_key, section_cfg in SECTION_CONFIGS.items():
-        result[section_key] = _digest_section(section_key, section_cfg, raw_data)
+        section = _digest_section(section_key, section_cfg, raw_data)
+        if synthesizer is not None:
+            if not first and cfg.section_delay_sec > 0:
+                time.sleep(cfg.section_delay_sec)
+            first = False
+            insight = synthesizer.generate_insight(section_key, section_cfg, raw_data)
+            if insight:
+                section["insight"] = insight
+        result[section_key] = section
     return result
 
 
@@ -748,6 +837,18 @@ def _digest_section(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _clean_insight(text: str) -> str:
+    """Strip preamble, labels, and wrapping quotes from a one-line insight."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    # Drop a leading "Insight:", "Market insight -", etc.
+    text = re.sub(r"^(market\s+)?(insight|analysis|takeaway)\s*[:\-–]\s*", "", text, flags=re.I)
+    text = text.strip().strip('"').strip()
+    return text[:400]
+
 
 def _should_verify(section_key: str) -> bool:
     if not cfg.verify_sections:
