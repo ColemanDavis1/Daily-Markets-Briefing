@@ -1,6 +1,15 @@
 name: Prepare Briefing
 
+# Writes the newsletter and uploads it as an artifact for the send job.
+#
+# Runs at 6:40 AM ET on weekdays. GitHub cron is UTC only and does not observe
+# daylight saving, so both candidate UTC times fire and a guard step exits the
+# one that is not actually 6 AM in New York.
+
 on:
+  schedule:
+    - cron: '40 10 * * 1-5'   # 6:40 ET during EDT
+    - cron: '40 11 * * 1-5'   # 6:40 ET during EST
   workflow_dispatch:
   repository_dispatch:
     types: [trigger-prepare]
@@ -9,29 +18,53 @@ permissions:
   contents: read
   actions: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
+      - name: Skip the duplicate DST run
+        if: github.event_name == 'schedule'
+        run: |
+          ET_HOUR=$(TZ=America/New_York date +%H)
+          echo "Current New York hour: $ET_HOUR"
+          if [ "$ET_HOUR" != "06" ]; then
+            echo "Not 6 AM in New York. This is the off-season cron. Exiting."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Aggregate, synthesize, and render
-        timeout-minutes: 40
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Aggregate, write, and render
+        timeout-minutes: 50
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_MODEL: claude-haiku-4-5
-          BRIEFING_MODE: light
+          # Subscription-billed generation. Generate the token locally with
+          # `claude setup-token` and store it as a repository secret.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          LLM_BACKEND: cli
+          CLAUDE_CLI_MODEL: sonnet
+          # No ANTHROPIC_API_KEY is passed, and LLM_ALLOW_API_FALLBACK stays
+          # unset, so this job has no path to metered billing. If subscription
+          # auth fails it ships the deterministic edition instead.
+          CLAUDE_MAX_TOKENS: "4096"
+          BRIEFING_MODE: newsletter
+          VERIFY_SECTIONS: "true"
           WEEKDAYS_ONLY: "true"
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -39,10 +72,12 @@ jobs:
           TIMEZONE: America/New_York
         run: python main.py --prepare-only
 
-      - name: Upload briefing as artifact
+      - name: Upload briefing
         uses: actions/upload-artifact@v4
         with:
           name: briefing-ready
-          path: briefing_ready.html
-          retention-days: 1
-          if-no-files-found: ignore
+          path: |
+            briefing_ready.html
+            briefing_subject.txt
+          retention-days: 2
+          if-no-files-found: error

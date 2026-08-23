@@ -1,9 +1,14 @@
-"""Email rendering module — builds Jinja2 context and renders HTML."""
+"""
+Email rendering.
+
+Builds the Jinja2 context and renders the newsletter. Also derives the subject
+line and preheader from the day's lead, so the inbox preview says something
+specific rather than "Morning Briefing".
+"""
 
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,12 +16,15 @@ from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from ai_synthesizer import build_section_plan
 from config import get_config
+from groups import COVERAGE_GROUPS, PRODUCT_GROUPS
 
 logger = logging.getLogger(__name__)
 cfg = get_config()
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_ET = ZoneInfo("America/New_York")
 
 
 class EmailRenderer:
@@ -30,109 +38,234 @@ class EmailRenderer:
 
     def render(
         self,
-        market_snapshot: dict[str, Any],
-        briefing: dict[str, Any],
         *,
-        macro_data: dict[str, Any] | None = None,
-        earnings_calendar: list[dict[str, Any]] | None = None,
-        economic_calendar: list[dict[str, Any]] | None = None,
-        sec_filings: list[dict[str, Any]] | None = None,
-        ma_headlines: list[dict[str, Any]] | None = None,
-    ) -> str:
-        template = self.env.get_template("briefing.html")
-        context = _build_context(
-            datetime.now(ZoneInfo("America/New_York")),
-            market_snapshot,
-            briefing,
-            macro_data=macro_data or {},
-            earnings_calendar=earnings_calendar or [],
-            economic_calendar=economic_calendar or [],
-            sec_filings=sec_filings or [],
-            ma_headlines=ma_headlines or [],
+        briefing: dict[str, Any],
+        engine: dict[str, Any],
+        raw_data: dict[str, Any],
+    ) -> tuple[str, str]:
+        """Returns (html, subject)."""
+        now = datetime.now(_ET)
+        context = _build_context(now, briefing, engine, raw_data)
+        html = self.env.get_template("briefing.html").render(**context)
+        logger.info(
+            "Rendered %d characters, %d sections, %d key numbers.",
+            len(html), len(context["sections"]), len(context["key_numbers"]),
         )
-        html = template.render(**context)
-        logger.info("Email rendered (%d characters).", len(html))
-        return html
+        return html, context["subject"]
 
 
-# FRED series display order and labels (matches news_aggregator.FRED_SERIES)
-_FRED_DISPLAY: list[tuple[str, str]] = [
-    ("fed_funds_rate", "Fed Funds Rate"),
-    ("cpi_yoy", "CPI Index"),
-    ("core_cpi", "Core CPI Index"),
-    ("core_pce", "Core PCE Index"),
-    ("unemployment", "Unemployment Rate"),
-    ("real_gdp_growth", "Real GDP Growth"),
-    ("yield_spread_10y2y", "10Y-2Y Spread"),
-    ("mortgage_30y", "30Y Mortgage Rate"),
-    ("ppi", "PPI Index"),
-    ("industrial_prod", "Industrial Production"),
-    ("retail_sales", "Retail Sales"),
-    ("housing_starts", "Housing Starts"),
-]
-
+# ---------------------------------------------------------------------------
+# Context
+# ---------------------------------------------------------------------------
 
 def _build_context(
     now: datetime,
-    market_snapshot: dict[str, Any],
     briefing: dict[str, Any],
-    *,
-    macro_data: dict[str, Any],
-    earnings_calendar: list[dict[str, Any]],
-    economic_calendar: list[dict[str, Any]],
-    sec_filings: list[dict[str, Any]],
-    ma_headlines: list[dict[str, Any]],
+    engine: dict[str, Any],
+    raw_data: dict[str, Any],
 ) -> dict[str, Any]:
-    day_of_week = now.strftime("%A")
-    date_long = now.strftime("%B %d, %Y")
-    generated_time = now.strftime("%I:%M %p")
-    generated_at = now.strftime("%Y-%m-%d %H:%M ET")
+    meta = briefing.get("_meta", {}) or {}
+    plan = build_section_plan()
 
-    # Build sections list in defined order
-    from ai_synthesizer import SECTION_CONFIGS
-    sections = []
-    for key in SECTION_CONFIGS:
-        if key in briefing:
-            sections.append(briefing[key])
+    # Assemble sections in plan order, skipping any that never got built.
+    sections: list[dict] = []
+    for entry in plan:
+        section = briefing.get(entry["key"])
+        if not section:
+            continue
+        section = dict(section)
+        section["anchor"] = f"sec-{entry['key'].replace('_', '-')}"
+        sections.append(section)
 
-    # Preheader from first section's narrative
-    preheader = "Your morning financial intelligence briefing."
-    if sections and sections[0].get("narrative"):
-        preheader = sections[0]["narrative"][:120].replace("\n", " ")
+    lead = next((s for s in sections if s["key"] == "editor_note"), None)
+    body_sections = [s for s in sections if s["key"] != "editor_note"]
 
-    # Sector ETFs sorted by performance (best to worst) for ranked display
-    sectors_raw = market_snapshot.get("sectors", {})
-    sorted_sectors = sorted(
-        [(k, v) for k, v in sectors_raw.items() if v.get("change_pct") is not None],
-        key=lambda x: x[1].get("change_pct", 0),
-        reverse=True,
-    )
+    # Navigation grid, split into the three visual bands of the issue.
+    nav_bands = [
+        ("The Desk", [s for s in body_sections if s["kind"] == "lead"]),
+        ("Coverage Groups", [s for s in body_sections if s["key"] in COVERAGE_GROUPS]),
+        ("Product Groups", [s for s in body_sections if s["key"] in PRODUCT_GROUPS]),
+        ("Forward Look", [s for s in body_sections if s["kind"] == "standing"]),
+    ]
+    nav_bands = [(label, items) for label, items in nav_bands if items]
 
-    # Sources
-    sources: list[str] = []
-    for src in ["stooq", "finnhub", "fred", "newsapi", "reuters", "cnbc", "sec edgar"]:
-        sources.append(src.upper())
+    # Band headers inserted into the body flow at the right positions.
+    first_coverage = next((s["key"] for s in body_sections if s["key"] in COVERAGE_GROUPS), None)
+    first_product = next((s["key"] for s in body_sections if s["key"] in PRODUCT_GROUPS), None)
+    first_standing = next((s["key"] for s in body_sections if s["kind"] == "standing"), None)
+    band_headers = {
+        first_coverage: {
+            "label": "Coverage Groups",
+            "blurb": "One story per industry desk, chosen for what it teaches about the sector.",
+        },
+        first_product: {
+            "label": "Product Groups",
+            "blurb": "One story per product desk: how capital actually moved today, and at what price.",
+        },
+        first_standing: {
+            "label": "Forward Look",
+            "blurb": "",
+        },
+    }
+    band_headers.pop(None, None)
 
-    macro_items = []
-    for key, label in _FRED_DISPLAY:
-        data = macro_data.get(key, {})
-        if data.get("value") is not None:
-            macro_items.append({"label": label, **data})
+    subject, preheader = _subject_and_preheader(now, lead, engine)
+
+    quiet_desks = [s["title"] for s in body_sections if s.get("quiet_day")]
+    unwritten = [s["title"] for s in body_sections if not s.get("available", True)]
 
     return {
-        "date_long": date_long,
-        "day_of_week": day_of_week,
-        "generated_time": generated_time,
-        "generated_at": generated_at,
+        # Masthead
+        "date_long": now.strftime("%B %-d, %Y") if _supports_dash() else now.strftime("%B %d, %Y"),
+        "day_of_week": now.strftime("%A"),
+        "generated_at": now.strftime("%I:%M %p ET").lstrip("0"),
+        "edition_label": now.strftime("%Y-%m-%d"),
+        "subject": subject,
         "preheader_text": preheader,
-        "unsubscribe_url": os.environ.get("UNSUBSCRIBE_URL", "mailto:unsubscribe@example.com"),
-        "market_snapshot": market_snapshot,
-        "sorted_sectors": sorted_sectors,
-        "macro_items": macro_items,
-        "earnings_calendar": earnings_calendar[:20],
-        "economic_calendar": economic_calendar[:15],
-        "sec_filings": sec_filings[:10],
-        "ma_headlines": ma_headlines[:12],
-        "sections": sections,
-        "sources_list": ", ".join(sources),
+
+        # Content
+        "lead": lead,
+        "sections": body_sections,
+        "nav_bands": nav_bands,
+        "band_headers": band_headers,
+        "key_numbers": engine.get("key_numbers", []),
+
+        # Data tables
+        "equity": engine.get("equity", {}),
+        "curve": engine.get("curve", {}),
+        "funding": engine.get("funding", {}),
+        "inflation": engine.get("inflation", {}),
+        "credit": engine.get("credit", {}),
+        "policy": engine.get("policy", {}),
+        "cross_asset": engine.get("cross_asset", {}),
+        "econ_rows": engine.get("econ", {}).get("rows", []),
+
+        # Calendars
+        "economic_calendar": _clean_econ_calendar(raw_data.get("economic_calendar") or []),
+        "earnings_calendar": _clean_earnings(raw_data.get("earnings_calendar") or []),
+        "sec_filings": (raw_data.get("sec_filings") or [])[:10],
+
+        # Footer
+        "sources_used": ", ".join(_pretty_sources(raw_data.get("sources_used") or [])),
+        "sources_failed_count": len(raw_data.get("sources_failed") or []),
+        "edition_kind": meta.get("edition", "newsletter"),
+        "degraded_sections": meta.get("degraded_sections", []),
+        "verified_count": meta.get("verified_count", 0),
+        "quiet_desks": quiet_desks,
+        "unwritten": unwritten,
+        "unsubscribe_url": cfg.unsubscribe_url,
     }
+
+
+def _supports_dash() -> bool:
+    """%-d is POSIX only; Windows uses %#d. Detect once rather than guessing."""
+    try:
+        datetime.now().strftime("%-d")
+        return True
+    except ValueError:
+        return False
+
+
+def _subject_and_preheader(now: datetime, lead: dict | None, engine: dict) -> tuple[str, str]:
+    date_bit = now.strftime("%b %d")
+
+    headline = ""
+    one_thing = ""
+    if lead:
+        headline = (lead.get("headline") or "").strip()
+        one_thing = (lead.get("one_thing") or "").strip()
+
+    if headline:
+        # Keep subjects inbox-legible.
+        trimmed = headline if len(headline) <= 68 else headline[:65].rsplit(" ", 1)[0] + "..."
+        subject = f"Morning Desk, {date_bit}: {trimmed}"
+    else:
+        subject = f"Morning Desk, {date_bit}"
+
+    preheader = one_thing or headline
+    if not preheader:
+        policy = engine.get("policy", {})
+        curve = engine.get("curve", {})
+        bits = []
+        if curve.get("spread_2s10s_bp") is not None:
+            bits.append(f"2s10s {curve['spread_2s10s_bp']}bp")
+        if policy.get("target_range"):
+            bits.append(f"Fed at {policy['target_range']}")
+        preheader = ". ".join(bits) if bits else "Markets, rates and the desks that matter."
+
+    return subject, preheader[:160]
+
+
+def _clean_econ_calendar(events: list[dict]) -> list[dict]:
+    out = []
+    for e in events[:12]:
+        out.append({
+            "time": str(e.get("time", ""))[:16],
+            "country": e.get("country", ""),
+            "event": e.get("event", ""),
+            "actual": _num(e.get("actual")),
+            "estimate": _num(e.get("estimate")),
+            "prev": _num(e.get("prev")),
+            "impact": str(e.get("impact", "")).title(),
+        })
+    return out
+
+
+def _clean_earnings(events: list[dict]) -> list[dict]:
+    out = []
+    for e in events[:14]:
+        symbol = e.get("symbol")
+        if not symbol:
+            continue
+        out.append({
+            "symbol": symbol,
+            "date": e.get("date", ""),
+            "eps_estimate": _num(e.get("epsEstimate")),
+            "revenue_estimate": _billions(e.get("revenueEstimate")),
+            "hour": {"bmo": "Pre-open", "amc": "Post-close"}.get(e.get("hour"), ""),
+        })
+    return out
+
+
+def _num(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        f = float(value)
+        return f"{f:,.2f}".rstrip("0").rstrip(".") if abs(f) < 1000 else f"{f:,.0f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _billions(value: Any) -> str:
+    try:
+        return f"${float(value) / 1e9:,.2f}B"
+    except (TypeError, ValueError):
+        return ""
+
+
+_SOURCE_LABELS = {
+    "market_data": "Stooq / Yahoo",
+    "fred": "FRED",
+    "finnhub": "Finnhub",
+    "finnhub_earnings": "Finnhub",
+    "finnhub_economic_calendar": "Finnhub",
+    "newsapi": "NewsAPI",
+    "sec_edgar": "SEC EDGAR",
+}
+
+
+def _pretty_sources(sources: list[str]) -> list[str]:
+    seen: list[str] = []
+    for s in sources:
+        label = _SOURCE_LABELS.get(s)
+        if not label:
+            prefix = s.split("_")[0]
+            label = {
+                "reuters": "Reuters", "cnbc": "CNBC", "wsj": "WSJ",
+                "marketwatch": "MarketWatch", "ft": "FT",
+                "fed": "Federal Reserve", "treasury": "US Treasury",
+            }.get(prefix, prefix.title())
+        if label not in seen:
+            seen.append(label)
+    return seen

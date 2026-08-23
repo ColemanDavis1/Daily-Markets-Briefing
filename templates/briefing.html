@@ -1,446 +1,358 @@
 <!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>Morning Briefing &mdash; {{ date_long }}</title>
-  <style type="text/css">
-    body, table, td, a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
-    table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
-    body { margin:0; padding:0; background-color:#F0F2F5; }
-    @media only screen and (max-width:680px) {
-      .email-container { width:100% !important; }
-      .header-inner, .section-pad, .snap-pad, .footer-inner { padding:18px 14px !important; }
-      .market-cell { display:block !important; width:50% !important; float:left; box-sizing:border-box; }
-      h1.masthead { font-size:17px !important; }
-      .narrative-p { font-size:13px !important; }
-    }
-  </style>
-</head>
-<body style="margin:0;padding:0;background-color:#F0F2F5;">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{{ subject }}</title>
+<style>
+  /* Reset */
+  body, table, td, p, a, h1, h2, h3 { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+  table { border-collapse:collapse !important; }
+  img { border:0; outline:none; text-decoration:none; }
+  body { margin:0 !important; padding:0 !important; width:100% !important; }
 
-<!-- Preheader -->
-<div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:#F0F2F5;">
-  {{ preheader_text | truncate(150, True, '') }}&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+  /* Type scale */
+  .serif { font-family: Georgia, 'Times New Roman', Times, serif; }
+  .sans  { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  .mono  { font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace; }
+
+  .eyebrow { font-size:10px; letter-spacing:1.4px; text-transform:uppercase; font-weight:700; }
+  .body-copy { font-size:16px; line-height:26px; color:#1F2937; }
+  .small { font-size:12px; line-height:18px; }
+  .tiny { font-size:11px; line-height:16px; }
+
+  a { color:#1D4ED8; }
+  .nav-chip a { text-decoration:none; }
+
+  /* Mobile */
+  @media screen and (max-width:640px) {
+    .container { width:100% !important; }
+    .px { padding-left:20px !important; padding-right:20px !important; }
+    .stack { display:block !important; width:100% !important; }
+    .kn-cell { display:block !important; width:100% !important; border-right:none !important; }
+    .hide-sm { display:none !important; }
+    .body-copy { font-size:16px !important; line-height:27px !important; }
+    h1.masthead { font-size:30px !important; }
+    .num-lg { font-size:19px !important; }
+  }
+
+  /* Dark mode: honored by Apple Mail and Outlook for Mac, ignored by Gmail. */
+  @media (prefers-color-scheme: dark) {
+    .bg-page { background-color:#0B0F16 !important; }
+    .bg-card { background-color:#111827 !important; }
+    .bg-soft { background-color:#161F2E !important; }
+    .bg-rule { background-color:#1F2937 !important; }
+    .body-copy, .t-dark { color:#E5E7EB !important; }
+    .t-mid { color:#9CA3AF !important; }
+    .t-head { color:#F9FAFB !important; }
+    .zebra { background-color:#141C29 !important; }
+    a { color:#7DA6FF !important; }
+  }
+</style>
+</head>
+<body class="bg-page" style="margin:0; padding:0; background-color:#EDF0F5;">
+
+<div style="display:none; font-size:1px; color:#EDF0F5; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden;">
+  {{ preheader_text }}
 </div>
 
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
-       style="background:#F0F2F5;padding:20px 0;">
-<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-page" style="background-color:#EDF0F5;">
+<tr><td align="center" style="padding:24px 12px 40px 12px;">
 
-<table role="presentation" class="email-container" width="680" cellspacing="0" cellpadding="0" border="0"
-       style="max-width:680px;width:100%;background:#FFFFFF;border-radius:4px;overflow:hidden;
-              box-shadow:0 2px 16px rgba(0,0,0,0.12);">
+<table role="presentation" width="660" cellpadding="0" cellspacing="0" class="container bg-card" style="width:660px; max-width:660px; background-color:#FFFFFF; border-radius:6px; overflow:hidden; box-shadow:0 1px 3px rgba(15,23,42,0.10);">
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- HEADER                                                      -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ============================ MASTHEAD ============================ -->
   <tr>
-    <td style="background:#0A1628;padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <td style="background-color:#0F172A; padding:28px 32px 22px 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr>
-          <td class="header-inner" style="padding:28px 40px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+          <td>
+            <div class="sans eyebrow" style="color:#7DA6FF; margin-bottom:10px;">
+              Markets &amp; Banking Intelligence
+            </div>
+            <h1 class="serif masthead" style="margin:0; font-size:34px; line-height:38px; color:#FFFFFF; font-weight:400; letter-spacing:-0.4px;">
+              The Morning Desk
+            </h1>
+          </td>
+        </tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;">
+        <tr>
+          <td style="border-top:1px solid #24334D; padding-top:12px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td valign="middle">
-                  <h1 class="masthead" style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:20px;font-weight:700;letter-spacing:3px;text-transform:uppercase;">
-                    MORNING BRIEFING
-                  </h1>
-                  <p style="margin:5px 0 0 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;">
-                    {{ day_of_week }}, {{ date_long }}
-                  </p>
+                <td class="sans tiny" style="color:#94A3B8;">
+                  {{ day_of_week }}, {{ date_long }}
                 </td>
-                <td valign="middle" align="right">
-                  <span style="display:inline-block;border:1px solid #1A3A5C;background:#0D2040;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;padding:5px 12px;border-radius:2px;">
-                    {{ generated_time }} ET
-                  </span>
+                <td class="sans tiny" align="right" style="color:#64748B;">
+                  Prepared {{ generated_at }}
                 </td>
               </tr>
             </table>
           </td>
         </tr>
-        <tr><td style="background:linear-gradient(90deg,#00A86B 0%,#0A4A7A 60%,#0A1628 100%);height:3px;line-height:3px;font-size:3px;">&nbsp;</td></tr>
       </table>
     </td>
   </tr>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- TABLE OF CONTENTS                                           -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  {% if edition_kind == 'data' %}
   <tr>
-    <td style="background:#0D1F38;padding:14px 40px;">
-      <p style="margin:0 0 8px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
-        IN THIS BRIEFING
-      </p>
-      <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;line-height:1.8;">
-        {% for section in sections %}
-        <span style="color:#4A8AB3;margin-right:6px;">&#9632;</span>
-        <span style="color:#C0CCD8;">{{ section.title }}</span>
-        {% if not loop.last %}<span style="color:#1A3A5C;">&nbsp;&nbsp;</span>{% endif %}
+    <td style="background-color:#FEF3C7; padding:12px 32px;" class="px">
+      <div class="sans small" style="color:#78350F;">
+        <strong>Data edition.</strong> Written analysis was unavailable this morning, so this
+        issue carries the full computed market picture without the desk stories. Every number
+        below is still live and sourced.
+      </div>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- ============================ THE ONE THING ============================ -->
+  {% if lead and lead.one_thing %}
+  <tr>
+    <td style="padding:28px 32px 4px 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-soft" style="background-color:#F6F8FB; border-left:3px solid #1D4ED8; border-radius:0 4px 4px 0;">
+        <tr>
+          <td style="padding:20px 22px;">
+            <div class="sans eyebrow t-mid" style="color:#64748B; margin-bottom:9px;">
+              If someone asks what is going on in the markets
+            </div>
+            <div class="serif t-dark" style="font-size:19px; line-height:29px; color:#0F172A;">
+              {{ lead.one_thing }}
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- ============================ KNOW THESE COLD ============================ -->
+  {% if key_numbers %}
+  <tr>
+    <td style="padding:26px 32px 0 32px;" class="px">
+      <div class="sans eyebrow t-mid" style="color:#64748B; border-bottom:2px solid #0F172A; padding-bottom:7px;">
+        Know these cold
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:14px 32px 6px 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        {% for row in key_numbers | batch(3) %}
+        <tr>
+          {% for item in row %}
+          <td class="kn-cell" width="33.33%" valign="top" style="padding:9px 12px 11px 0; border-bottom:1px solid #EEF1F5;">
+            <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:0.6px;">
+              {{ item.label }}
+            </div>
+            <div class="mono num-lg t-dark" style="font-size:20px; line-height:26px; color:#0F172A; padding-top:3px; font-weight:600;">
+              {{ item.value }}
+            </div>
+            {% if item.sub %}
+            <div class="sans tiny" style="padding-top:1px; color:{% if item.tone == 'up' %}#047857{% elif item.tone == 'down' %}#B91C1C{% else %}#94A3B8{% endif %};">
+              {{ item.sub }}
+            </div>
+            {% endif %}
+          </td>
+          {% endfor %}
+          {% for _ in range(3 - row | length) %}
+          <td class="kn-cell" width="33.33%" style="border-bottom:1px solid #EEF1F5;">&nbsp;</td>
+          {% endfor %}
+        </tr>
         {% endfor %}
-      </p>
-    </td>
-  </tr>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- MARKET SNAPSHOT                                             -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  {% if market_snapshot %}
-  <tr>
-    <td style="background:#0A1628;padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-
-        <!-- ─── Section label ─── -->
-        <tr>
-          <td class="snap-pad" style="padding:10px 40px 6px 40px;">
-            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
-              MARKET SNAPSHOT
-            </p>
-          </td>
-        </tr>
-
-        <!-- ─── PRIMARY INDICES ─── -->
-        {% if market_snapshot.primary %}
-        <tr>
-          <td style="padding:4px 32px 8px 32px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                {% for key, data in market_snapshot.primary.items() %}
-                <td class="market-cell" valign="top" style="padding:5px 6px;text-align:center;width:20%;">
-                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
-                  {% if data.value is not none %}
-                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;">
-                      {% if data.format == 'yield' %}{{ "%.2f"|format(data.value) }}%{% elif data.format == 'price' %}${{ "{:,.2f}".format(data.value) }}{% elif data.format == 'crypto' %}${{ "{:,.0f}".format(data.value) }}{% elif data.format == 'fx' %}{{ "%.4f"|format(data.value) }}{% else %}{{ "{:,.2f}".format(data.value) }}{% endif %}
-                    </p>
-                    {% if data.change_pct is not none %}
-                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
-                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">&#9644; {{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
-                    {% endif %}
-                  {% else %}
-                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
-                  {% endif %}
-                </td>
-                {% endfor %}
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ─── DIVIDER ─── -->
-        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-
-        <!-- ─── S&P 500 SECTORS ─── -->
-        {% if sorted_sectors %}
-        <tr>
-          <td style="padding:6px 40px 2px 40px;">
-            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">S&amp;P 500 SECTORS &mdash; TODAY&rsquo;S PERFORMANCE</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:4px 32px 8px 32px;">
-            {% set mid = ((sorted_sectors | length) + 1) // 2 %}
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                <td width="49%" valign="top">
-                  {% for key, data in sorted_sectors[:mid] %}
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:2px;">
-                    <tr>
-                      <td style="padding:1px 4px;">
-                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ data.label }}</span>
-                      </td>
-                      <td align="right" style="padding:1px 4px;">
-                        {% if data.direction == 'up' %}<span style="color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</span>
-                        {% elif data.direction == 'down' %}<span style="color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</span>
-                        {% else %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</span>{% endif %}
-                      </td>
-                    </tr>
-                  </table>
-                  {% endfor %}
-                </td>
-                <td width="2%" style="background:#1A2F4A;">&nbsp;</td>
-                <td width="49%" valign="top">
-                  {% for key, data in sorted_sectors[mid:] %}
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:2px;">
-                    <tr>
-                      <td style="padding:1px 4px;">
-                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ data.label }}</span>
-                      </td>
-                      <td align="right" style="padding:1px 4px;">
-                        {% if data.direction == 'up' %}<span style="color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</span>
-                        {% elif data.direction == 'down' %}<span style="color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</span>
-                        {% else %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</span>{% endif %}
-                      </td>
-                    </tr>
-                  </table>
-                  {% endfor %}
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ─── DIVIDER ─── -->
-        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-
-        <!-- ─── YIELD CURVE & RATES ─── -->
-        {% if market_snapshot.rates %}
-        <tr>
-          <td style="padding:6px 40px 2px 40px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                <td valign="middle">
-                  <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">YIELD CURVE &amp; FIXED INCOME</p>
-                </td>
-                {% if market_snapshot.derived %}
-                <td align="right" valign="middle">
-                  {% set spread_bps = market_snapshot.derived.spread_2y10y_bps %}
-                  {% if spread_bps is not none %}
-                    {% if market_snapshot.derived.yield_curve_inverted %}
-                      <span style="display:inline-block;background:#5A0A0A;border:1px solid #8A2020;color:#FF8080;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:2px;">&#9650; INVERTED &nbsp;2Y-10Y: {{ "%+d"|format(spread_bps) }}bps</span>
-                    {% else %}
-                      <span style="display:inline-block;background:#0A3A1A;border:1px solid #0A6A2A;color:#80CCA0;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:2px;">NORMAL &nbsp;2Y-10Y: {{ "%+d"|format(spread_bps) }}bps</span>
-                    {% endif %}
-                  {% endif %}
-                </td>
-                {% endif %}
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:4px 32px 8px 32px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                {% for key in ['treasury_2y', 'treasury_5y', 'treasury_10y', 'treasury_30y'] %}
-                {% set data = market_snapshot.rates.get(key, {}) %}
-                <td valign="top" style="padding:4px 8px;text-align:center;width:25%;">
-                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label if data.label else key }}</p>
-                  {% if data.value is not none %}
-                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;">{{ "%.2f"|format(data.value) }}%</p>
-                    {% if data.change_pct is not none %}
-                      {% if data.direction == 'up' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% elif data.direction == 'down' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
-                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">&#9644; {{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
-                    {% endif %}
-                  {% else %}
-                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
-                  {% endif %}
-                </td>
-                {% endfor %}
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ─── DIVIDER ─── -->
-        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-
-        <!-- ─── FX & COMMODITIES ─── -->
-        {% if market_snapshot.fx or market_snapshot.commodities %}
-        <tr>
-          <td style="padding:6px 40px 2px 40px;">
-            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">FX &amp; COMMODITIES</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:4px 32px 4px 32px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                {% set fx_items = market_snapshot.fx.items() if market_snapshot.fx else [] %}
-                {% for key, data in fx_items %}
-                <td valign="top" style="padding:4px 5px;text-align:center;">
-                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
-                  {% if data.value is not none %}
-                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">
-                      {% if data.format == 'fx' %}{{ "%.4f"|format(data.value) }}{% else %}{{ "{:,.2f}".format(data.value) }}{% endif %}
-                    </p>
-                    {% if data.change_pct is not none %}
-                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
-                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
-                    {% endif %}
-                  {% else %}
-                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
-                  {% endif %}
-                </td>
-                {% endfor %}
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% if market_snapshot.commodities %}
-        <tr>
-          <td style="padding:0 32px 8px 32px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                {% for key, data in market_snapshot.commodities.items() %}
-                <td valign="top" style="padding:4px 5px;text-align:center;">
-                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
-                  {% if data.value is not none %}
-                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">${{ "{:,.2f}".format(data.value) }}</p>
-                    {% if data.change_pct is not none %}
-                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
-                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
-                    {% endif %}
-                  {% else %}
-                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
-                  {% endif %}
-                </td>
-                {% endfor %}
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-        {% endif %}
-
-        <!-- ─── DIVIDER ─── -->
-        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-
-        <!-- ─── INTERNATIONAL & CRYPTO ─── -->
-        {% if market_snapshot.international or market_snapshot.crypto %}
-        <tr>
-          <td style="padding:6px 40px 2px 40px;">
-            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">INTERNATIONAL MARKETS &amp; DIGITAL ASSETS</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:4px 32px 12px 32px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                {% if market_snapshot.international %}
-                {% for key, data in market_snapshot.international.items() %}
-                <td valign="top" style="padding:4px 7px;text-align:center;">
-                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
-                  {% if data.value is not none %}
-                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">{{ "{:,.0f}".format(data.value) }}</p>
-                    {% if data.change_pct is not none %}
-                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
-                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
-                    {% endif %}
-                  {% else %}
-                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
-                  {% endif %}
-                </td>
-                {% endfor %}
-                {% endif %}
-                {% if market_snapshot.crypto %}
-                {% for key, data in market_snapshot.crypto.items() %}
-                <td valign="top" style="padding:4px 7px;text-align:center;">
-                  <p style="margin:0 0 2px 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">{{ data.label }}</p>
-                  {% if data.value is not none %}
-                    <p style="margin:0 0 1px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">${{ "{:,.0f}".format(data.value) }}</p>
-                    {% if data.change_pct is not none %}
-                      {% if data.direction == 'up' %}<p style="margin:0;color:#00A86B;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9650; {{ "%+.2f"|format(data.change_pct) }}%</p>
-                      {% elif data.direction == 'down' %}<p style="margin:0;color:#CC2936;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;">&#9660; {{ "%.2f"|format(data.change_pct) }}%</p>
-                      {% else %}<p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ "%+.2f"|format(data.change_pct) }}%</p>{% endif %}
-                    {% endif %}
-                  {% else %}
-                    <p style="margin:0;color:#3A4A5A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">N/A</p>
-                  {% endif %}
-                </td>
-                {% endfor %}
-                {% endif %}
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ─── DIVIDER ─── -->
-        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-
-        <!-- ─── FRED MACRO INDICATORS ─── -->
-        {% if macro_items %}
-        <tr>
-          <td style="padding:6px 40px 2px 40px;">
-            <p style="margin:0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">MACRO INDICATORS (FRED)</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:4px 32px 12px 32px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              {% set mid = ((macro_items | length) + 1) // 2 %}
-              <tr>
-                <td width="49%" valign="top">
-                  {% for item in macro_items[:mid] %}
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:3px;">
-                    <tr>
-                      <td style="padding:2px 4px;">
-                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ item.label }}</span>
-                      </td>
-                      <td align="right" style="padding:2px 4px;">
-                        <span style="color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">{{ "{:,.2f}".format(item.value) }}</span>
-                        {% if item.date %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;"> &nbsp;({{ item.date }})</span>{% endif %}
-                      </td>
-                    </tr>
-                  </table>
-                  {% endfor %}
-                </td>
-                <td width="2%" style="background:#1A2F4A;">&nbsp;</td>
-                <td width="49%" valign="top">
-                  {% for item in macro_items[mid:] %}
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:3px;">
-                    <tr>
-                      <td style="padding:2px 4px;">
-                        <span style="color:#C0CCD8;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ item.label }}</span>
-                      </td>
-                      <td align="right" style="padding:2px 4px;">
-                        <span style="color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;">{{ "{:,.2f}".format(item.value) }}</span>
-                        {% if item.date %}<span style="color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;"> &nbsp;({{ item.date }})</span>{% endif %}
-                      </td>
-                    </tr>
-                  </table>
-                  {% endfor %}
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- ─── CLOSING DIVIDER ─── -->
-        <tr><td style="background:#1A2F4A;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-
       </table>
     </td>
   </tr>
   {% endif %}
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- DATA CALENDARS (already pulled — shown for reference)       -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  {% if ma_headlines %}
+  <!-- ============================ IN THIS ISSUE ============================ -->
+  {% if nav_bands %}
   <tr>
-    <td style="background:#FFFFFF;padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <td style="padding:26px 32px 0 32px;" class="px">
+      <div class="sans eyebrow t-mid" style="color:#64748B; border-bottom:2px solid #0F172A; padding-bottom:7px;">
+        In this issue
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:16px 32px 8px 32px;" class="px">
+      {% for band_label, items in nav_bands %}
+      <div class="sans tiny t-mid" style="color:#94A3B8; text-transform:uppercase; letter-spacing:1px; padding:{% if not loop.first %}14px{% else %}0{% endif %} 0 7px 0;">
+        {{ band_label }}
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        {% for row in items | batch(2) %}
         <tr>
-          <td style="background:#1A3A5C;padding:8px 40px;">
-            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">M&amp;A &amp; CORPORATE DEALS</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:12px 40px;">
-            {% for h in ma_headlines %}
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:8px;">
+          {% for s in row %}
+          <td class="stack nav-chip" width="50%" valign="top" style="padding:0 8px 8px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-soft" style="background-color:#F7F9FC; border-radius:4px;">
               <tr>
-                <td style="padding:6px 0;border-bottom:1px solid #E0E6ED;">
-                  <p style="margin:0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;">{{ h.get('headline', '') }}</p>
-                  {% if h.get('summary') %}
-                  <p style="margin:4px 0 0 0;color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;line-height:1.45;">{{ h.get('summary')[:280] }}</p>
+                <td width="4" style="background-color:{{ s.accent }}; border-radius:4px 0 0 4px;"></td>
+                <td style="padding:9px 11px;">
+                  <a href="#{{ s.anchor }}" class="sans" style="font-size:13px; line-height:18px; color:#0F172A; font-weight:600; text-decoration:none;">
+                    {{ s.title }}
+                  </a>
+                  {% if s.quiet_day %}
+                  <span class="sans tiny" style="color:#94A3B8;"> &middot; quiet</span>
                   {% endif %}
-                  <p style="margin:4px 0 0 0;color:#8A9BB3;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;">{{ h.get('source', '') }}</p>
                 </td>
               </tr>
             </table>
-            {% endfor %}
+          </td>
+          {% endfor %}
+          {% if row | length == 1 %}<td width="50%">&nbsp;</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </table>
+      {% endfor %}
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- ============================ THE LEAD ============================ -->
+  {% if lead and lead.paragraphs %}
+  <tr>
+    <td style="padding:30px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="border-top:2px solid #0F172A; padding-top:16px;">
+          <div class="sans eyebrow" style="color:#1D4ED8; margin-bottom:10px;">The Lead</div>
+          {% if lead.headline %}
+          <h2 class="serif t-head" style="margin:0 0 14px 0; font-size:24px; line-height:32px; color:#0F172A; font-weight:400; letter-spacing:-0.2px;">
+            {{ lead.headline }}
+          </h2>
+          {% endif %}
+          {% for p in lead.paragraphs %}
+          <p class="serif body-copy" style="margin:0 0 14px 0;">{{ p }}</p>
+          {% endfor %}
+          {% if lead.sources %}
+          <div class="sans tiny" style="color:#94A3B8; padding-top:2px;">
+            Sources:
+            {% for src in lead.sources %}<a href="{{ src.url }}" style="color:#64748B;">{{ src.publisher }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+          {% endif %}
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- ============================ THE TAPE ============================ -->
+  <tr>
+    <td style="padding:32px 32px 0 32px;" class="px">
+      <div class="sans eyebrow t-mid" style="color:#64748B; border-bottom:2px solid #0F172A; padding-bottom:7px;">
+        The tape
+      </div>
+      <div class="sans tiny t-mid" style="color:#94A3B8; padding-top:8px;">
+        Cash indices are the prior session's close. Futures, FX and commodities are live.
+      </div>
+    </td>
+  </tr>
+
+  {% if equity.indices %}
+  <tr>
+    <td style="padding:16px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+        {% for i in equity.indices %}
+        <tr class="{% if loop.index is odd %}zebra{% endif %}" {% if loop.index is odd %}style="background-color:#FAFBFD;"{% endif %}>
+          <td class="sans t-dark" style="padding:8px 10px; color:#1F2937; font-weight:600;">{{ i.label }}</td>
+          <td class="mono t-dark" align="right" style="padding:8px 10px; color:#0F172A;">{{ i.display }}</td>
+          <td class="mono" align="right" width="90" style="padding:8px 10px; font-weight:600; color:{% if i.tone == 'up' %}#047857{% elif i.tone == 'down' %}#B91C1C{% else %}#64748B{% endif %};">
+            {% if i.tone == 'up' %}&#9650;{% elif i.tone == 'down' %}&#9660;{% endif %} {{ i.change_display }}
+          </td>
+        </tr>
+        {% endfor %}
+        {% for i in equity.futures %}
+        <tr>
+          <td class="sans" style="padding:8px 10px; color:#475569;">{{ i.label }}</td>
+          <td class="mono" align="right" style="padding:8px 10px; color:#334155;">{{ i.display }}</td>
+          <td class="mono" align="right" width="90" style="padding:8px 10px; font-weight:600; color:{% if i.tone == 'up' %}#047857{% elif i.tone == 'down' %}#B91C1C{% else %}#64748B{% endif %};">
+            {% if i.tone == 'up' %}&#9650;{% elif i.tone == 'down' %}&#9660;{% endif %} {{ i.change_display }}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- Sector rotation, diverging bars -->
+  {% if equity.sectors %}
+  {% set maxabs = equity.sectors | map(attribute='change_pct') | map('abs') | max %}
+  <tr>
+    <td style="padding:24px 32px 0 32px;" class="px">
+      <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:10px;">
+        Sector rotation, best to worst
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        {% for s in equity.sectors %}
+        {% set w = ((s.change_pct | abs) / (maxabs if maxabs > 0 else 1) * 46) | round(1) %}
+        <tr>
+          <td class="sans" width="120" style="padding:5px 8px 5px 0; color:#334155;">{{ s.label }}</td>
+          <td style="padding:5px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                {% if s.change_pct >= 0 %}
+                <td width="50%" style="border-right:1px solid #E2E8F0;">&nbsp;</td>
+                <td width="{{ w }}%" style="background-color:#10B981; height:12px; font-size:1px; line-height:12px;">&nbsp;</td>
+                <td>&nbsp;</td>
+                {% else %}
+                <td width="{{ (50 - w) | round(1) }}%">&nbsp;</td>
+                <td width="{{ w }}%" style="background-color:#EF4444; height:12px; font-size:1px; line-height:12px; border-right:1px solid #E2E8F0;">&nbsp;</td>
+                <td width="50%">&nbsp;</td>
+                {% endif %}
+              </tr>
+            </table>
+          </td>
+          <td class="mono" align="right" width="66" style="padding:5px 0 5px 8px; color:{% if s.tone == 'up' %}#047857{% elif s.tone == 'down' %}#B91C1C{% else %}#64748B{% endif %}; font-weight:600;">
+            {{ s.change_display }}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- Cross asset + international -->
+  {% if cross_asset.commodities or cross_asset.fx or equity.international %}
+  <tr>
+    <td style="padding:24px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="stack" width="50%" valign="top" style="padding-right:12px;">
+            {% if cross_asset.commodities or cross_asset.fx %}
+            <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+              Rates-adjacent and hard assets
+            </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+              {% for r in cross_asset.fx + cross_asset.commodities + cross_asset.crypto %}
+              <tr>
+                <td class="sans" style="padding:5px 6px 5px 0; color:#475569;">{{ r.label }}</td>
+                <td class="mono" align="right" style="padding:5px 6px; color:#0F172A;">{{ r.display }}</td>
+                <td class="mono" align="right" width="66" style="padding:5px 0; color:{% if r.tone == 'up' %}#047857{% elif r.tone == 'down' %}#B91C1C{% else %}#64748B{% endif %};">{{ r.change_display }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% endif %}
+          </td>
+          <td class="stack" width="50%" valign="top" style="padding-left:12px;">
+            {% if equity.international %}
+            <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+              Overseas
+            </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+              {% for r in equity.international %}
+              <tr>
+                <td class="sans" style="padding:5px 6px 5px 0; color:#475569;">{{ r.label }}</td>
+                <td class="mono" align="right" style="padding:5px 6px; color:#0F172A;">{{ r.display }}</td>
+                <td class="mono" align="right" width="66" style="padding:5px 0; color:{% if r.tone == 'up' %}#047857{% elif r.tone == 'down' %}#B91C1C{% else %}#64748B{% endif %};">{{ r.change_display }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% endif %}
           </td>
         </tr>
       </table>
@@ -448,35 +360,412 @@
   </tr>
   {% endif %}
 
-  {% if economic_calendar %}
+  <!-- ============================ THE CURVE ============================ -->
+  {% if curve.points %}
   <tr>
-    <td style="background:#F0F4F8;padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <td style="padding:32px 32px 0 32px;" class="px">
+      <div class="sans eyebrow t-mid" style="color:#64748B; border-bottom:2px solid #0F172A; padding-bottom:7px;">
+        The curve
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:16px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr>
-          <td style="background:#0A3A2A;padding:8px 40px;">
-            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">ECONOMIC CALENDAR</p>
+          {% for p in curve.points %}
+          <td align="center" valign="top" style="padding:0 3px;">
+            <div class="sans tiny t-mid" style="color:#94A3B8; font-weight:700;">{{ p.label }}</div>
+            <div class="mono t-dark" style="font-size:15px; line-height:22px; color:#0F172A; font-weight:600; padding-top:3px;">{{ p.display }}</div>
+            <div class="mono" style="font-size:10px; line-height:15px; color:{% if p.tone == 'up' %}#047857{% elif p.tone == 'down' %}#B91C1C{% else %}#94A3B8{% endif %};">{{ p.change_display }}</div>
+          </td>
+          {% endfor %}
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:16px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-soft" style="background-color:#F7F9FC; border-radius:4px;">
+        <tr>
+          {% if curve.spread_2s10s_bp is not none %}
+          <td align="center" style="padding:12px 8px; border-right:1px solid #E8EDF3;">
+            <div class="sans tiny t-mid" style="color:#64748B;">2s10s</div>
+            <div class="mono t-dark" style="font-size:16px; color:{% if curve.inverted_2s10s %}#B91C1C{% else %}#0F172A{% endif %}; font-weight:600;">{{ curve.spread_2s10s_bp }}bp</div>
+          </td>
+          {% endif %}
+          {% if curve.spread_3m10y_bp is not none %}
+          <td align="center" style="padding:12px 8px; border-right:1px solid #E8EDF3;">
+            <div class="sans tiny t-mid" style="color:#64748B;">3M10Y</div>
+            <div class="mono t-dark" style="font-size:16px; color:{% if curve.inverted_3m10y %}#B91C1C{% else %}#0F172A{% endif %}; font-weight:600;">{{ curve.spread_3m10y_bp }}bp</div>
+          </td>
+          {% endif %}
+          {% if curve.spread_5s30s_bp is not none %}
+          <td align="center" style="padding:12px 8px; border-right:1px solid #E8EDF3;">
+            <div class="sans tiny t-mid" style="color:#64748B;">5s30s</div>
+            <div class="mono t-dark" style="font-size:16px; color:#0F172A; font-weight:600;">{{ curve.spread_5s30s_bp }}bp</div>
+          </td>
+          {% endif %}
+          {% if policy.target_range %}
+          <td align="center" style="padding:12px 8px;">
+            <div class="sans tiny t-mid" style="color:#64748B;">Fed target</div>
+            <div class="mono t-dark" style="font-size:16px; color:#0F172A; font-weight:600;">{{ policy.target_range }}</div>
+          </td>
+          {% endif %}
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- Funding / inflation / credit tables -->
+  {% if funding.rows or inflation.rows or credit.rows %}
+  <tr>
+    <td style="padding:22px 32px 0 32px;" class="px">
+      {% if funding.rows %}
+      <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+        Funding stack
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        {% for r in funding.rows %}
+        <tr class="{% if loop.index is odd %}zebra{% endif %}" {% if loop.index is odd %}style="background-color:#FAFBFD;"{% endif %}>
+          <td class="sans t-dark" valign="top" style="padding:8px 10px; color:#1F2937; font-weight:600;" width="140">{{ r.label }}</td>
+          <td class="sans tiny t-mid hide-sm" valign="top" style="padding:8px 10px; color:#64748B;">{{ r.note }}</td>
+          <td class="mono t-dark" align="right" valign="top" style="padding:8px 10px; color:#0F172A; font-weight:600;" width="80">{{ r.display }}</td>
+        </tr>
+        {% endfor %}
+        {% if funding.sofr_iorb_bp is not none %}
+        <tr>
+          <td class="sans t-dark" style="padding:8px 10px; color:#1F2937; font-weight:600;">SOFR less IORB</td>
+          <td class="sans tiny t-mid hide-sm" style="padding:8px 10px; color:#64748B;">The funding-stress spread. Persistently positive means reserves are getting scarce.</td>
+          <td class="mono" align="right" style="padding:8px 10px; font-weight:600; color:{% if funding.sofr_iorb_bp > 10 %}#B91C1C{% else %}#0F172A{% endif %};">{{ funding.sofr_iorb_bp }}bp</td>
+        </tr>
+        {% endif %}
+      </table>
+      {% endif %}
+
+      {% if inflation.rows or credit.rows %}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+        <tr>
+          <td class="stack" width="50%" valign="top" style="padding-right:12px;">
+            {% if inflation.rows %}
+            <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+              Inflation expectations
+            </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+              {% for r in inflation.rows %}
+              <tr>
+                <td class="sans" style="padding:5px 6px 5px 0; color:#475569;">{{ r.label }}</td>
+                <td class="mono" align="right" style="padding:5px 6px; color:#0F172A; font-weight:600;">{{ r.display }}</td>
+                <td class="mono" align="right" width="60" style="padding:5px 0; color:{% if r.tone == 'up' %}#047857{% elif r.tone == 'down' %}#B91C1C{% else %}#64748B{% endif %};">{{ r.change_display }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% endif %}
+          </td>
+          <td class="stack" width="50%" valign="top" style="padding-left:12px;">
+            {% if credit.rows %}
+            <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+              Credit spreads
+            </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+              {% for r in credit.rows %}
+              <tr>
+                <td class="sans" style="padding:5px 6px 5px 0; color:#475569;">{{ r.label }}</td>
+                <td class="mono" align="right" style="padding:5px 6px; color:#0F172A; font-weight:600;">{{ r.display }}</td>
+                <td class="mono" align="right" width="60" style="padding:5px 0; color:{% if r.tone == 'up' %}#047857{% elif r.tone == 'down' %}#B91C1C{% else %}#64748B{% endif %};">{{ r.change_display }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% if credit.rows and credit.rows[0].percentile is not none %}
+            <div class="sans tiny t-mid" style="color:#94A3B8; padding-top:6px;">
+              HY at the {{ credit.rows[0].percentile }}th percentile of the past year{% if credit.rows[0].range_1y %} (range {{ credit.rows[0].range_1y }}){% endif %}.
+            </div>
+            {% endif %}
+            {% endif %}
           </td>
         </tr>
+      </table>
+      {% endif %}
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- Policy path callout -->
+  {% if policy.next_fomc or policy.cuts_priced_12m is not none %}
+  <tr>
+    <td style="padding:22px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0F172A; border-radius:5px;">
         <tr>
-          <td style="padding:12px 40px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              {% for e in economic_calendar %}
+          {% if policy.next_fomc %}
+          <td align="center" valign="middle" style="padding:16px 10px; border-right:1px solid #1F2E47;">
+            <div class="sans tiny" style="color:#7DA6FF; text-transform:uppercase; letter-spacing:1px;">Next FOMC</div>
+            <div class="serif" style="font-size:17px; line-height:24px; color:#FFFFFF; padding-top:4px;">{{ policy.next_fomc }}</div>
+            {% if policy.days_to_fomc is not none %}
+            <div class="sans tiny" style="color:#94A3B8;">{{ policy.days_to_fomc }} days out</div>
+            {% endif %}
+          </td>
+          {% endif %}
+          {% if policy.cuts_priced_12m is not none %}
+          <td align="center" valign="middle" style="padding:16px 10px;">
+            <div class="sans tiny" style="color:#7DA6FF; text-transform:uppercase; letter-spacing:1px;">
+              {% if policy.cuts_priced_12m >= 0.15 %}Cuts priced, next 12 months
+              {% elif policy.cuts_priced_12m <= -0.15 %}Hikes priced, next 12 months
+              {% else %}Policy path, next 12 months{% endif %}
+            </div>
+            <div class="serif" style="font-size:17px; line-height:24px; color:#FFFFFF; padding-top:4px;">
+              {% if policy.cuts_priced_12m >= 0.15 or policy.cuts_priced_12m <= -0.15 %}
+              {{ '%.1f' | format(policy.cuts_priced_12m | abs) }} &times; 25bp &middot; {{ policy.terminal_easing_12m_bp | abs }}bp
+              {% else %}
+              No change priced
+              {% endif %}
+            </div>
+            <div class="sans tiny" style="color:#94A3B8;">derived from the Treasury curve</div>
+          </td>
+          {% endif %}
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  {% if econ_rows %}
+  <tr>
+    <td style="padding:26px 32px 0 32px;" class="px">
+      <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+        Macro scoreboard
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        <tr>
+          <td class="sans tiny t-mid" style="padding:0 8px 6px 0; color:#94A3B8; border-bottom:1px solid #E8EDF3;">Series</td>
+          <td class="sans tiny t-mid" align="right" style="padding:0 8px 6px; color:#94A3B8; border-bottom:1px solid #E8EDF3;">Latest</td>
+          <td class="sans tiny t-mid" align="right" style="padding:0 8px 6px; color:#94A3B8; border-bottom:1px solid #E8EDF3;">Prior</td>
+          <td class="sans tiny t-mid" align="right" style="padding:0 0 6px 8px; color:#94A3B8; border-bottom:1px solid #E8EDF3;">As of</td>
+        </tr>
+        {% for r in econ_rows %}
+        <tr class="{% if loop.index is odd %}zebra{% endif %}" {% if loop.index is odd %}style="background-color:#FAFBFD;"{% endif %}>
+          <td class="sans t-dark" style="padding:7px 8px 7px 0; color:#1F2937;">{{ r.label }}</td>
+          <td class="mono t-dark" align="right" style="padding:7px 8px; color:#0F172A; font-weight:600;">{{ r.display }}</td>
+          <td class="mono t-mid" align="right" style="padding:7px 8px; color:#64748B;">{{ r.prev_display or '&mdash;' | safe }}</td>
+          <td class="sans tiny t-mid" align="right" style="padding:7px 0 7px 8px; color:#94A3B8;">{{ r.as_of }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- ============================ SECTIONS ============================ -->
+  {% for s in sections %}
+
+  {% if band_headers.get(s.key) %}
+  <tr>
+    <td style="padding:38px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="background-color:#0F172A; padding:14px 18px; border-radius:5px;">
+            <div class="sans eyebrow" style="color:#FFFFFF; letter-spacing:2px;">
+              {{ band_headers[s.key].label }}
+            </div>
+            {% if band_headers[s.key].blurb %}
+            <div class="sans tiny" style="color:#94A3B8; padding-top:5px;">
+              {{ band_headers[s.key].blurb }}
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% endif %}
+
+  <tr>
+    <td id="{{ s.anchor }}" style="padding:30px 32px 0 32px;" class="px">
+      <a name="{{ s.anchor }}"></a>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="border-top:3px solid {{ s.accent }}; padding-top:14px;">
+
+            <!-- group label -->
+            <table role="presentation" cellpadding="0" cellspacing="0">
               <tr>
-                <td style="padding:4px 0;border-bottom:1px solid #E0E6ED;">
-                  <p style="margin:0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;">{{ e.get('event', 'Event') }}</p>
-                  <p style="margin:2px 0 0 0;color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">
-                    {% if e.get('country') %}{{ e.get('country') }} &nbsp;|&nbsp; {% endif %}
-                    Impact: {{ e.get('impact', 'N/A') }} &nbsp;|&nbsp;
-                    Actual: {{ e.get('actual') if e.get('actual') is not none and e.get('actual') != '' else 'pending' }} &nbsp;|&nbsp;
-                    Est: {{ e.get('estimate') if e.get('estimate') is not none and e.get('estimate') != '' else 'N/A' }} &nbsp;|&nbsp;
-                    Prior: {{ e.get('prev') if e.get('prev') is not none and e.get('prev') != '' else 'N/A' }}
-                  </p>
+                <td style="background-color:{{ s.accent }}; padding:3px 8px; border-radius:3px;">
+                  <span class="sans" style="font-size:10px; letter-spacing:1.2px; color:#FFFFFF; font-weight:700; text-transform:uppercase;">{{ s.title }}</span>
+                </td>
+                {% if s.subtitle %}
+                <td class="sans tiny t-mid" style="padding-left:9px; color:#94A3B8;">{{ s.subtitle }}</td>
+                {% endif %}
+              </tr>
+            </table>
+
+            {% if s.headline %}
+            <h2 class="serif t-head" style="margin:13px 0 0 0; font-size:21px; line-height:29px; color:#0F172A; font-weight:400; letter-spacing:-0.2px;">
+              {{ s.headline }}
+            </h2>
+            {% endif %}
+
+            {% if s.desk_note %}
+            <div class="sans tiny t-mid" style="color:#94A3B8; padding-top:7px; font-style:italic;">
+              {{ s.desk_note }}
+            </div>
+            {% endif %}
+
+            {% if s.quiet_day %}
+            <div class="sans tiny" style="color:#92400E; background-color:#FFFBEB; border-radius:3px; padding:6px 10px; margin-top:10px; display:inline-block;">
+              Quiet desk today. Standing context below.
+            </div>
+            {% endif %}
+
+            <div style="padding-top:12px;">
+              {% for p in s.paragraphs %}
+              <p class="serif body-copy" style="margin:0 0 13px 0;">{{ p }}</p>
+              {% endfor %}
+            </div>
+
+            {% if s.catalysts %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;">
+              {% for c in s.catalysts %}
+              <tr>
+                <td style="padding:0 0 14px 0;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-soft" style="background-color:#F7F9FC; border-radius:4px;">
+                    <tr>
+                      <td width="3" style="background-color:{{ s.accent }}; border-radius:4px 0 0 4px;"></td>
+                      <td style="padding:13px 15px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td class="sans t-dark" style="font-size:14px; color:#0F172A; font-weight:700;">{{ c.what }}</td>
+                            <td class="sans tiny t-mid" align="right" style="color:#64748B; white-space:nowrap; padding-left:8px;">{{ c.when }}</td>
+                          </tr>
+                        </table>
+                        {% if c.consensus %}
+                        <div class="sans tiny t-mid" style="color:#64748B; padding-top:4px;">
+                          <strong style="color:#475569;">Consensus:</strong> {{ c.consensus }}
+                        </div>
+                        {% endif %}
+                        {% if c.why %}
+                        <div class="serif" style="font-size:14px; line-height:22px; color:#334155; padding-top:7px;">{{ c.why }}</div>
+                        {% endif %}
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:9px;">
+                          <tr>
+                            {% if c.bull %}
+                            <td class="stack" width="50%" valign="top" style="padding-right:8px;">
+                              <div class="sans tiny" style="color:#047857; font-weight:700; text-transform:uppercase; letter-spacing:0.6px;">Upside</div>
+                              <div class="sans tiny t-mid" style="color:#475569; padding-top:2px;">{{ c.bull }}</div>
+                            </td>
+                            {% endif %}
+                            {% if c.bear %}
+                            <td class="stack" width="50%" valign="top" style="padding-left:8px;">
+                              <div class="sans tiny" style="color:#B91C1C; font-weight:700; text-transform:uppercase; letter-spacing:0.6px;">Downside</div>
+                              <div class="sans tiny t-mid" style="color:#475569; padding-top:2px;">{{ c.bear }}</div>
+                            </td>
+                            {% endif %}
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
               </tr>
               {% endfor %}
             </table>
+            {% endif %}
+
+            {% if s.numbers %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:2px 0 14px 0;">
+              {% for row in s.numbers | batch(3) %}
+              <tr>
+                {% for n in row %}
+                <td class="kn-cell" width="33.33%" valign="top" style="padding:0 8px 8px 0;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-soft" style="background-color:#F7F9FC; border-radius:3px;">
+                    <tr><td style="padding:8px 10px;">
+                      <div class="sans tiny t-mid" style="color:#94A3B8; text-transform:uppercase; letter-spacing:0.5px;">{{ n.label }}</div>
+                      <div class="mono t-dark" style="font-size:14px; color:#0F172A; font-weight:600; padding-top:2px;">{{ n.value }}</div>
+                    </td></tr>
+                  </table>
+                </td>
+                {% endfor %}
+                {% for _ in range(3 - row | length) %}<td width="33.33%">&nbsp;</td>{% endfor %}
+              </tr>
+              {% endfor %}
+            </table>
+            {% endif %}
+
+            {% if s.why_it_matters %}
+            <div class="sans" style="font-size:13px; line-height:21px; color:#475569; border-left:2px solid #CBD5E1; padding:2px 0 2px 12px; margin-bottom:14px;">
+              <span class="sans" style="color:#94A3B8; text-transform:uppercase; letter-spacing:0.8px; font-size:10px; font-weight:700;">Read-through</span><br>
+              {{ s.why_it_matters }}
+            </div>
+            {% endif %}
+
+            {% if s.interview_question and s.interview_answer %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 12px 0;">
+              <tr>
+                <td style="background-color:#F0F5FF; border:1px solid #D6E2FB; border-radius:5px; padding:15px 17px;">
+                  <div class="sans eyebrow" style="color:#1D4ED8; margin-bottom:8px;">If they ask</div>
+                  <div class="serif t-dark" style="font-size:15px; line-height:23px; color:#0F172A; font-weight:700; margin-bottom:9px;">
+                    &ldquo;{{ s.interview_question }}&rdquo;
+                  </div>
+                  <div class="serif" style="font-size:15px; line-height:24px; color:#1F2937;">
+                    {{ s.interview_answer }}
+                  </div>
+                </td>
+              </tr>
+            </table>
+            {% endif %}
+
+            {% if s.sources %}
+            <div class="sans tiny" style="color:#94A3B8; padding-bottom:2px;">
+              {% if s.available %}Sources:{% else %}Read directly:{% endif %}
+              {% for src in s.sources %}
+              <a href="{{ src.url }}" style="color:#64748B;">{{ src.publisher }}{% if not s.available %} &mdash; {{ src.title | truncate(70) }}{% endif %}</a>{% if not loop.last %} &middot; {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+
           </td>
         </tr>
+      </table>
+    </td>
+  </tr>
+  {% endfor %}
+
+  <!-- ============================ CALENDARS ============================ -->
+  {% if economic_calendar or earnings_calendar %}
+  <tr>
+    <td style="padding:38px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="background-color:#0F172A; padding:14px 18px; border-radius:5px;">
+            <div class="sans eyebrow" style="color:#FFFFFF; letter-spacing:2px;">The Calendar</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  {% if economic_calendar %}
+  <tr>
+    <td style="padding:22px 32px 0 32px;" class="px">
+      <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+        Economic releases
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;">
+        <tr>
+          <td class="sans tiny t-mid" style="padding:0 6px 6px 0; color:#94A3B8; border-bottom:1px solid #E8EDF3;">When</td>
+          <td class="sans tiny t-mid" style="padding:0 6px 6px; color:#94A3B8; border-bottom:1px solid #E8EDF3;">Release</td>
+          <td class="sans tiny t-mid" align="right" style="padding:0 6px 6px; color:#94A3B8; border-bottom:1px solid #E8EDF3;">Actual</td>
+          <td class="sans tiny t-mid" align="right" style="padding:0 6px 6px; color:#94A3B8; border-bottom:1px solid #E8EDF3;">Est.</td>
+          <td class="sans tiny t-mid" align="right" style="padding:0 0 6px 6px; color:#94A3B8; border-bottom:1px solid #E8EDF3;">Prior</td>
+        </tr>
+        {% for e in economic_calendar %}
+        <tr class="{% if loop.index is odd %}zebra{% endif %}" {% if loop.index is odd %}style="background-color:#FAFBFD;"{% endif %}>
+          <td class="mono t-mid" style="padding:6px 6px 6px 0; color:#64748B;">{{ e.time }}</td>
+          <td class="sans t-dark" style="padding:6px; color:#1F2937;">{{ e.event }}{% if e.country %} <span style="color:#94A3B8;">({{ e.country }})</span>{% endif %}</td>
+          <td class="mono t-dark" align="right" style="padding:6px; color:#0F172A; font-weight:600;">{{ e.actual }}</td>
+          <td class="mono t-mid" align="right" style="padding:6px; color:#64748B;">{{ e.estimate }}</td>
+          <td class="mono t-mid" align="right" style="padding:6px 0 6px 6px; color:#94A3B8;">{{ e.prev }}</td>
+        </tr>
+        {% endfor %}
       </table>
     </td>
   </tr>
@@ -484,201 +773,95 @@
 
   {% if earnings_calendar %}
   <tr>
-    <td style="background:#FFFFFF;padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+    <td style="padding:22px 32px 0 32px;" class="px">
+      <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+        Earnings this week
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;">
+        {% for row in earnings_calendar | batch(2) %}
         <tr>
-          <td style="background:#1A3A5C;padding:8px 40px;">
-            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">UPCOMING EARNINGS (NEXT 7 DAYS)</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:12px 40px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              {% for e in earnings_calendar %}
-              <tr>
-                <td width="15%" style="padding:3px 0;border-bottom:1px solid #E0E6ED;">
-                  <span style="color:#0A4A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;">{{ e.get('symbol', '') }}</span>
-                </td>
-                <td width="15%" style="padding:3px 0;border-bottom:1px solid #E0E6ED;">
-                  <span style="color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">{{ e.get('date', '') }}</span>
-                </td>
-                <td style="padding:3px 0;border-bottom:1px solid #E0E6ED;">
-                  <span style="color:#5A6A7A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;">
-                    {% if e.get('epsEstimate') is not none %}EPS est: ${{ "%.2f"|format(e.get('epsEstimate')) }}{% endif %}
-                    {% if e.get('revenueEstimate') is not none and e.get('revenueEstimate') > 1e8 %} &nbsp;|&nbsp; Rev est: ${{ "%.1f"|format(e.get('revenueEstimate') / 1e9) }}B{% endif %}
-                  </span>
-                </td>
-              </tr>
-              {% endfor %}
+          {% for e in row %}
+          <td class="stack" width="50%" valign="top" style="padding:0 8px 6px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-soft" style="background-color:#FAFBFD; border-radius:3px;">
+              <tr><td style="padding:8px 10px;">
+                <span class="mono t-dark" style="font-size:13px; color:#0F172A; font-weight:700;">{{ e.symbol }}</span>
+                <span class="sans tiny t-mid" style="color:#94A3B8;"> {{ e.date }}{% if e.hour %} &middot; {{ e.hour }}{% endif %}</span>
+                {% if e.eps_estimate or e.revenue_estimate %}
+                <div class="sans tiny t-mid" style="color:#64748B; padding-top:2px;">
+                  {% if e.eps_estimate %}EPS est {{ e.eps_estimate }}{% endif %}{% if e.eps_estimate and e.revenue_estimate %} &middot; {% endif %}{% if e.revenue_estimate %}Rev est {{ e.revenue_estimate }}{% endif %}
+                </div>
+                {% endif %}
+              </td></tr>
             </table>
           </td>
+          {% endfor %}
+          {% if row | length == 1 %}<td width="50%">&nbsp;</td>{% endif %}
         </tr>
+        {% endfor %}
       </table>
     </td>
   </tr>
+  {% endif %}
   {% endif %}
 
   {% if sec_filings %}
   <tr>
-    <td style="background:#F8F9FB;padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-        <tr>
-          <td style="background:#3A2A6A;padding:8px 40px;">
-            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">SEC 8-K FILINGS TODAY</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:12px 40px;">
-            {% for f in sec_filings %}
-            <p style="margin:0 0 4px 0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;">
-              <span style="font-weight:600;">{{ f.get('entity', 'Unknown') }}</span>
-              <span style="color:#5A6A7A;"> &mdash; {{ f.get('form_type', '8-K') }}</span>
-            </p>
-            {% endfor %}
-          </td>
-        </tr>
-      </table>
+    <td style="padding:22px 32px 0 32px;" class="px">
+      <div class="sans tiny t-mid" style="color:#64748B; text-transform:uppercase; letter-spacing:1px; padding-bottom:8px;">
+        Fresh 8-K filings
+      </div>
+      <div class="sans small t-mid" style="color:#64748B;">
+        {% for f in sec_filings %}<a href="{{ f.url }}" style="color:#475569; text-decoration:none;">{{ f.entity }}</a>{% if not loop.last %} &middot; {% endif %}{% endfor %}
+      </div>
     </td>
   </tr>
   {% endif %}
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- CONTENT SECTIONS (loop)                                     -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  {% for section in sections %}
+  <!-- ============================ METHODOLOGY ============================ -->
   <tr>
-    <td style="background:{% if loop.index is odd %}#FFFFFF{% else %}#F8F9FB{% endif %};padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-
-        <!-- Section header bar -->
+    <td style="padding:34px 32px 0 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-soft" style="background-color:#F7F9FC; border-radius:5px;">
         <tr>
-          <td style="background:{{ section.color }};padding:10px 40px;">
-            <p style="margin:0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;">
-              {{ section.title | upper }}
-            </p>
+          <td style="padding:18px 20px;">
+            <div class="sans eyebrow t-mid" style="color:#64748B; margin-bottom:9px;">How to read this</div>
+            <div class="sans small t-mid" style="color:#475569;">
+              Every price, yield, spread and macro figure above is pulled from a primary
+              source and computed in code, not written by a model. Index levels are the
+              prior session's close; futures, FX and commodities are live at send time.
+              {% if policy.methodology %}{{ policy.methodology }}{% endif %}
+              {% if verified_count %}
+              A verification pass checked {{ verified_count }} section{{ 's' if verified_count != 1 }} against the computed figures.
+              {% endif %}
+              {% if quiet_desks %}
+              Quiet desks today: {{ quiet_desks | join(', ') }}.
+              {% endif %}
+              {% if unwritten %}
+              Analysis unavailable for: {{ unwritten | join(', ') }}.
+              {% endif %}
+            </div>
           </td>
         </tr>
-
-        <!-- AI market insight callout -->
-        {% if section.insight %}
-        <tr>
-          <td class="section-pad" style="padding:18px 40px 0 40px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#0A1628;border-radius:3px;">
-              <tr>
-                <td style="padding:13px 16px;border-left:3px solid #00C281;">
-                  <p style="margin:0 0 4px 0;color:#00C281;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">
-                    &#9670;&nbsp; AI Market Insight
-                  </p>
-                  <p style="margin:0;color:#E8EEF4;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;">
-                    {{ section.insight }}
-                  </p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- Bottom line callout -->
-        {% if section.bottom_line %}
-        <tr>
-          <td class="section-pad" style="padding:18px 40px 0 40px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F4F7FA;border-left:3px solid {{ section.color }};border-radius:2px;">
-              <tr>
-                <td style="padding:12px 16px;">
-                  <p style="margin:0 0 3px 0;color:{{ section.color }};font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">
-                    Bottom Line
-                  </p>
-                  <p style="margin:0;color:#1A2A3A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;font-weight:600;">
-                    {{ section.bottom_line }}
-                  </p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- Narrative -->
-        {% if section.narrative %}
-        <tr>
-          <td class="section-pad" style="padding:22px 40px 8px 40px;">
-            {% for para in section.narrative.split('\n\n') %}
-            {% if para.strip() %}
-            <p class="narrative-p" style="margin:0 0 14px 0;color:#2A3A4A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.7;">
-              {{ para.strip() }}
-            </p>
-            {% endif %}
-            {% endfor %}
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- Bullets -->
-        {% if section.bullets %}
-        <tr>
-          <td style="padding:4px 40px 20px 40px;">
-            <!-- Divider line -->
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:12px;">
-              <tr><td style="background:#E0E5EC;height:1px;line-height:1px;font-size:1px;">&nbsp;</td></tr>
-            </table>
-            <!-- Bullet table -->
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              {% for bullet in section.bullets %}
-              <tr>
-                <td style="padding:5px 0;border-bottom:1px solid #F0F2F5;" valign="top">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                    <tr>
-                      <td width="180" valign="top" style="padding-right:12px;">
-                        <p style="margin:0;color:#0A1628;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">
-                          {{ bullet.label }}
-                        </p>
-                        {% if bullet.value %}
-                        <p style="margin:2px 0 0 0;color:#{{ '00A86B' if '+' in bullet.value|string else 'CC2936' if '-' in bullet.value|string else '0A4A7A' }};font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">
-                          {{ bullet.value }}
-                        </p>
-                        {% endif %}
-                      </td>
-                      <td valign="top">
-                        <p style="margin:0;color:#4A5A6A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;">
-                          {{ bullet.note }}
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              {% endfor %}
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
       </table>
     </td>
   </tr>
-  {% endfor %}
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- FOOTER                                                      -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ============================ FOOTER ============================ -->
   <tr>
-    <td style="background:#0A1628;padding:0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-        <tr><td style="background:linear-gradient(90deg,#00A86B 0%,#0A4A7A 60%,#0A1628 100%);height:2px;line-height:2px;font-size:2px;">&nbsp;</td></tr>
+    <td style="padding:26px 32px 30px 32px;" class="px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr>
-          <td class="footer-inner" style="padding:22px 40px;">
-            <p style="margin:0 0 5px 0;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
-              MORNING BRIEFING
-            </p>
-            <p style="margin:0 0 8px 0;color:#3A5070;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;line-height:1.5;">
-              Generated {{ generated_at }}&nbsp;&nbsp;|&nbsp;&nbsp;Sources: {{ sources_list }}
-            </p>
-            <p style="margin:0;color:#2A3A4A;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;line-height:1.5;">
-              For informational purposes only. Not investment advice. Market data may be delayed.
-              &nbsp;|&nbsp;
-              <a href="{{ unsubscribe_url }}" style="color:#3A5070;text-decoration:underline;">Unsubscribe</a>
-            </p>
+          <td style="border-top:1px solid #E8EDF3; padding-top:16px;">
+            <div class="serif" style="font-size:15px; color:#0F172A; padding-bottom:6px;">The Morning Desk</div>
+            <div class="sans tiny t-mid" style="color:#94A3B8;">
+              {{ day_of_week }}, {{ date_long }} &middot; edition {{ edition_label }}<br>
+              Data: {{ sources_used }}
+              {% if sources_failed_count %} &middot; {{ sources_failed_count }} source(s) unavailable{% endif %}<br>
+              Built for interview preparation. Not investment advice and not a recommendation
+              to buy or sell any security.
+            </div>
+            <div class="sans tiny" style="padding-top:12px;">
+              <a href="{{ unsubscribe_url }}" style="color:#94A3B8;">Unsubscribe</a>
+            </div>
           </td>
         </tr>
       </table>
@@ -688,5 +871,6 @@
 </table>
 </td></tr>
 </table>
+
 </body>
 </html>
