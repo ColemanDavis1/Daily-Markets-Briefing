@@ -49,6 +49,13 @@ class Config:
     anthropic_api_key: str = field(
         default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", "").strip()
     )
+    # Hard guard against surprise spend. While this is false the metered API
+    # backend is never used, even if an ANTHROPIC_API_KEY happens to be in the
+    # environment and even if the CLI is unreachable. A run with no working
+    # subscription auth ships the deterministic edition instead of billing.
+    llm_allow_api_fallback: bool = field(
+        default_factory=lambda: _flag("LLM_ALLOW_API_FALLBACK", "false")
+    )
     claude_model: str = field(
         default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
     )

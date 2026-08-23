@@ -180,6 +180,18 @@ def _call_cli(system_prompt: str, user_prompt: str, timeout: int) -> str:
         raise ModelCallFailed("CLI returned no output")
 
     if envelope is not None:
+        # The CLI reports what the call cost. On subscription auth this is 0,
+        # which is the signal to watch if you want to confirm a run never
+        # touched metered credits.
+        cost = envelope.get("total_cost_usd")
+        if isinstance(cost, (int, float)):
+            logger.info("    CLI reported cost: $%.4f", cost)
+            if cost > 0:
+                logger.warning(
+                    "    Non-zero cost reported. This call was billed as API "
+                    "usage rather than against a subscription."
+                )
+
         for field in ("result", "text", "content", "response"):
             value = envelope.get(field)
             if isinstance(value, str) and value.strip():
@@ -192,6 +204,15 @@ def _call_cli(system_prompt: str, user_prompt: str, timeout: int) -> str:
 # ---------------------------------------------------------------------------
 
 def _api_available() -> bool:
+    """
+    The metered backend is opt-in only.
+
+    LLM_ALLOW_API_FALLBACK must be explicitly true. Otherwise this returns
+    False regardless of whether a key is present, so a run can never quietly
+    move from subscription billing to paid API credits.
+    """
+    if not cfg.llm_allow_api_fallback:
+        return False
     if not cfg.anthropic_api_key:
         return False
     try:

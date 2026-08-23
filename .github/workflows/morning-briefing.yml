@@ -86,8 +86,6 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           LLM_BACKEND: cli
           CLAUDE_CLI_MODEL: sonnet
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_MODEL: claude-sonnet-5
           CLAUDE_MAX_TOKENS: "4096"
           BRIEFING_MODE: newsletter
           VERIFY_SECTIONS: "true"

@@ -66,8 +66,29 @@ Zero marginal cost, by design.
 | GitHub Actions, roughly 5 minutes a day | $0, well inside the free tier |
 | SendGrid or Gmail SMTP, one email a day | $0 |
 
-Set `LLM_BACKEND=api` to run on metered credits instead. On Sonnet that is
-roughly $1.50 to $3.00 a run with verification on.
+### Making sure it never bills you
+
+There is no API key involved in the subscription path. Locally, `claude login`
+authenticates the CLI with your Claude account and the pipeline shells out to
+it; nothing is metered. In CI, `claude setup-token` mints a long-lived OAuth
+token tied to the same subscription.
+
+Three guards keep a run from quietly moving to paid credits:
+
+1. `LLM_ALLOW_API_FALLBACK` defaults to **false**. While it is false the metered
+   backend is never used, even when an `ANTHROPIC_API_KEY` is present in the
+   environment and even when the CLI is unreachable.
+2. `claude_client.py` strips `ANTHROPIC_API_KEY` from the environment it hands
+   to the CLI, so a stray key cannot divert a subscription call.
+3. The workflows pass no API key at all.
+
+If subscription auth fails, the run ships the deterministic edition rather than
+billing you. To verify a run stayed free, check the log: each call prints the
+cost the CLI reports, which is `$0.0000` on subscription auth, and a non-zero
+figure raises a warning.
+
+Setting `LLM_ALLOW_API_FALLBACK=true` with a key opts into metered billing. On
+Sonnet that is roughly $1.50 to $3.00 a run with verification on.
 
 ## Setup
 
@@ -120,6 +141,54 @@ GitHub cron is UTC and does not observe daylight saving, so each workflow
 registers both candidate UTC times and a guard step exits the run that is not
 actually the right hour in New York.
 
+### How Claude authenticates in CI
+
+GitHub Actions runs unattended, so there is no browser and no interactive login.
+The CLI handles this with a long-lived OAuth token tied to your subscription.
+
+Run this once, locally, on a machine where you are already logged in:
+
+```bash
+claude setup-token
+```
+
+It opens a browser, confirms your account, and prints a token. Store that token
+as the `CLAUDE_CODE_OAUTH_TOKEN` repository secret. The workflow installs the
+CLI and sets that variable, and the CLI then authenticates headlessly as your
+subscription. No API key, no metered spend.
+
+The three systems are doing separate jobs and none of them needs the others'
+credentials:
+
+| System | Job | Credential |
+|---|---|---|
+| GitHub Actions | Runs the cron and executes the pipeline | Repository secrets |
+| Claude CLI | Writes the desk stories inside the prepare job | `CLAUDE_CODE_OAUTH_TOKEN` |
+| SendGrid or Gmail SMTP | Delivers the finished HTML | `SENDGRID_API_KEY` or `SMTP_PASSWORD` |
+
+Caveats worth knowing:
+
+- The token is long-lived but not permanent. It can expire or be revoked. When
+  that happens the run ships the deterministic edition and the log states the
+  auth failure, so re-mint with `claude setup-token` and update the secret.
+- CI usage counts against your plan's normal limits, same as local usage.
+- Subscription auth in CI is a comparatively new capability. If it stops working,
+  the fully local option below needs no token at all.
+
+### Running it locally on a schedule instead
+
+If you would rather not manage a token, skip GitHub Actions and let your own
+machine do it. The CLI is already logged in there, so nothing extra is needed.
+
+Create a Windows scheduled task that runs at 6:40 AM on weekdays:
+
+```powershell
+schtasks /create /tn "Morning Desk" /tr "cmd /c cd /d \"%USERPROFILE%\OneDrive - University of North Carolina at Chapel Hill\AI\Claude Code\Daily-News-Briefing\" && .venv\Scripts\python.exe main.py" /sc weekly /d MON,TUE,WED,THU,FRI /st 06:40
+```
+
+Tradeoff: your machine has to be awake at that hour. GitHub Actions does not
+care whether your laptop is open.
+
 ### Secrets to set
 
 | Secret | Purpose |
@@ -130,7 +199,7 @@ actually the right hour in New York.
 | `NEWS_API_KEY` | Optional. |
 | `SENDER_EMAIL`, `RECIPIENT_EMAILS`, `ADMIN_EMAIL` | Addresses. |
 | `SMTP_PASSWORD` or `SENDGRID_API_KEY` | Delivery. |
-| `ANTHROPIC_API_KEY` | Optional metered fallback. |
+| `ANTHROPIC_API_KEY` | Not needed. Only used if you deliberately set `LLM_ALLOW_API_FALLBACK=true`. |
 
 ## Degradation
 
