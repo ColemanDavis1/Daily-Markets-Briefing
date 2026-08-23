@@ -1,6 +1,14 @@
 name: Morning Briefing
 
+# Sends the newsletter prepared by prepare.yml.
+#
+# Runs at 7:00 AM ET on weekdays. Both DST candidate times fire and a guard
+# step exits the one that is not actually 7 AM in New York.
+
 on:
+  schedule:
+    - cron: '0 11 * * 1-5'   # 7:00 ET during EDT
+    - cron: '0 12 * * 1-5'   # 7:00 ET during EST
   workflow_dispatch:
   repository_dispatch:
     types: [trigger-send]
@@ -9,24 +17,32 @@ permissions:
   contents: read
   actions: read
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   send-briefing:
     runs-on: ubuntu-latest
     steps:
+      - name: Skip the duplicate DST run
+        if: github.event_name == 'schedule'
+        run: |
+          ET_HOUR=$(TZ=America/New_York date +%H)
+          echo "Current New York hour: $ET_HOUR"
+          if [ "$ET_HOUR" != "07" ]; then
+            echo "Not 7 AM in New York. This is the off-season cron. Exiting."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Download prepared briefing
+      - name: Download the prepared briefing
         id: download
         continue-on-error: true
         env:
@@ -43,9 +59,9 @@ jobs:
             exit 1
           fi
           gh run download "$RUN_ID" --name briefing-ready --dir .
-          echo "Downloaded briefing_ready.html from run $RUN_ID"
+          echo "Downloaded from prepare run $RUN_ID"
 
-      - name: Send prepared briefing
+      - name: Send it
         if: steps.download.outcome == 'success'
         timeout-minutes: 5
         env:
@@ -53,6 +69,7 @@ jobs:
           SMTP_PORT: "587"
           SMTP_USER: ${{ secrets.SENDER_EMAIL }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
           ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
@@ -60,13 +77,20 @@ jobs:
           TIMEZONE: America/New_York
         run: python main.py --send-only
 
-      - name: Fallback — run full pipeline if no artifact
+      # If prepare never ran or failed, build and send in one pass rather than
+      # skipping the morning entirely.
+      - name: Fallback, build and send in one pass
         if: steps.download.outcome == 'failure'
-        timeout-minutes: 45
+        timeout-minutes: 55
         env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          LLM_BACKEND: cli
+          CLAUDE_CLI_MODEL: sonnet
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_MODEL: claude-haiku-4-5
-          BRIEFING_MODE: light
+          CLAUDE_MODEL: claude-sonnet-5
+          CLAUDE_MAX_TOKENS: "4096"
+          BRIEFING_MODE: newsletter
+          VERIFY_SECTIONS: "true"
           WEEKDAYS_ONLY: "true"
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -75,10 +99,12 @@ jobs:
           SMTP_PORT: "587"
           SMTP_USER: ${{ secrets.SENDER_EMAIL }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
           ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
           TIMEZONE: America/New_York
         run: |
-          echo "Prepare artifact not found — running full pipeline as fallback."
+          echo "No prepared artifact. Running the full pipeline."
+          npm install -g @anthropic-ai/claude-code
           python main.py

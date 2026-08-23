@@ -1,285 +1,182 @@
-# Morning Briefing
+# The Morning Desk
 
-Automated daily business and financial intelligence email, delivered at 9:30 AM weekdays.
+A daily markets newsletter built for investment banking interview preparation.
+It lands at 7:00 AM ET on weekdays with the broader market picture, a full
+rates, Fed and funding section, and one explained story from each of six
+coverage groups and six product groups.
 
-**What it does:** Aggregates live headlines from Reuters, CNBC, MarketWatch, Yahoo Finance, WSJ, and SEC EDGAR; pulls real-time market data via Yahoo Finance; synthesizes everything through Claude into a structured briefing; renders a premium HTML email; and delivers it via SendGrid (or SMTP fallback).
+The design goal is not headlines. It is being able to answer "what's going on in
+the markets?" and "walk me through a deal you've been following" with specific
+numbers and the reasoning behind them.
 
----
+## What is in an issue
 
-## Project Structure
+| Block | Content |
+|---|---|
+| The one thing | A single quotable sentence answering "what's going on in the markets?" |
+| Know these cold | Index levels, 10Y, 2Y, 2s10s, SOFR, EFFR, Fed target, next FOMC, priced policy path, CPI, Core PCE, unemployment, HY OAS, WTI, gold, dollar |
+| The Lead | The day's dominant story and why it outranks everything else |
+| The tape | Prior close, overnight futures, sector rotation bars, cross-asset, overseas |
+| The curve | Full 3M to 30Y curve with daily bp changes, 2s10s, 3M10Y, 5s30s |
+| Rates, the Fed & Funding | The longest section. Curve shape, SOFR against IORB, reverse repo, breakevens against real yields, credit spreads, the implied policy path |
+| Economic Data | Latest prints against consensus and prior, with the Fed read-through |
+| Coverage Groups | TMT, Healthcare, Industrials, Consumer & Retail, Energy & Power, FIG |
+| Product Groups | M&A, ECM, DCM, Leveraged Finance, Sponsors, Restructuring |
+| Geopolitics & Policy | One development with a concrete market transmission channel |
+| What to Watch | Four or five catalysts in the next 24 to 72 hours with bull and bear cases |
+| Calendars | Economic releases, earnings this week, fresh 8-K filings |
+
+Every desk story ends with an **If they ask** box: the question an interviewer
+would put to you off that story, and a spoken-word answer you could deliver
+verbatim.
+
+## Architecture
+
+The pipeline separates numbers from prose, which is the accuracy guarantee.
 
 ```
-daily-briefing/
-├── config.py             # Central config loaded from environment variables
-├── news_aggregator.py    # RSS feeds, yfinance market data, SEC EDGAR
-├── ai_synthesizer.py     # Claude API synthesis → structured JSON
-├── email_renderer.py     # Jinja2 HTML rendering
-├── email_sender.py       # SendGrid (primary) + SMTP (fallback) delivery
-├── scheduler.py          # APScheduler Mon–Fri 9:30 AM with retry logic
-├── main.py               # Pipeline orchestrator + CLI entry point
-├── templates/
-│   └── briefing.html     # Jinja2 HTML email template
-├── requirements.txt
-├── .env.example          # Environment variable template
-└── briefing_log.json     # Auto-created; logs every run
+news_aggregator.py   pulls prices, FRED series, news, calendars, filings
+market_engine.py     computes EVERY number and a rule-based reading of it
+ai_synthesizer.py    writes the prose, given the computed numbers as fact
+claude_client.py     runs generation on the CLI (subscription) or the API
+email_renderer.py    builds the Jinja context, derives subject and preheader
+templates/           the newsletter itself
+main.py              orchestration
 ```
 
----
+`market_engine.py` produces a **verified facts block** that is injected into
+every model call. The model is told it may explain those figures but may not
+introduce a number that is not either in that block or stated in the day's
+source articles. A second verification pass then re-checks each draft against
+the same block and strips anything unsupported.
 
-## Quick Start
+Consequence: if a figure appears in the email, it was pulled from a primary
+source or arithmetically derived from one. Curve spreads, funding spreads,
+percentile ranks, the implied policy path and the entire Know These Cold block
+are computed in Python, never generated.
 
-### 1. Prerequisites
+## Cost
 
-- Python 3.11+
-- An [Anthropic API key](https://console.anthropic.com/)
-- A [SendGrid account](https://sendgrid.com/) (free tier: 100 emails/day) **or** SMTP credentials
+Zero marginal cost, by design.
 
-### 2. Clone and install
+| Component | Cost |
+|---|---|
+| Claude, via the CLI on a Pro or Max subscription | $0 |
+| FRED, Yahoo, Finnhub, SEC EDGAR, RSS | $0 |
+| GitHub Actions, roughly 5 minutes a day | $0, well inside the free tier |
+| SendGrid or Gmail SMTP, one email a day | $0 |
+
+Set `LLM_BACKEND=api` to run on metered credits instead. On Sonnet that is
+roughly $1.50 to $3.00 a run with verification on.
+
+## Setup
+
+### 1. Install and configure
 
 ```bash
-git clone https://github.com/your-org/daily-briefing.git
-cd daily-briefing
-
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-
 pip install -r requirements.txt
-```
-
-### 3. Configure environment
-
-```bash
 cp .env.example .env
 ```
 
-Open `.env` and fill in at minimum:
+Fill in `.env`. The only strictly required data key is `FRED_API_KEY`, a free
+32-character key from [fredaccount.stlouisfed.org](https://fredaccount.stlouisfed.org/apikeys).
+`FINNHUB_API_KEY` is strongly recommended for the calendars.
 
-| Variable | Required | Description |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Yes | Claude API key |
-| `SENDGRID_API_KEY` | Yes* | SendGrid API key (*or use SMTP) |
-| `SENDER_EMAIL` | Yes | Verified sender address |
-| `RECIPIENT_EMAILS` | Yes | Comma-separated recipient list |
-| `ADMIN_EMAIL` | Recommended | Alert destination on pipeline failure |
-| `TIMEZONE` | No | Default: `America/New_York` |
-| `SMTP_HOST/USER/PASSWORD` | No | SMTP fallback credentials |
+### 2. Authenticate the model backend
 
-### 4. Test locally (no email sent)
+For local runs, log the CLI in once:
+
+```bash
+claude login
+```
+
+The pipeline reports a clear error if that session expires, and falls back to a
+deterministic edition rather than sending nothing.
+
+### 3. Preview before sending
 
 ```bash
 python main.py --dry-run
 ```
 
-This runs the full pipeline and saves the rendered email to `briefing_preview.html`. Open it in a browser to verify the output before enabling delivery.
+Writes `briefing_preview.html`. Open it in a browser. Add `--data-only` to
+render the numbers with no model calls at all, which is the fast way to check
+data health.
 
-### 5. Send a live test email
+### 4. Send
 
 ```bash
 python main.py
 ```
 
-### 6. Start the scheduler
+## Running in GitHub Actions
 
-```bash
-python scheduler.py
-```
+Two workflows: `prepare.yml` writes the issue at 6:40 AM ET and uploads it as an
+artifact; `morning-briefing.yml` sends it at 7:00 AM ET. Splitting them means a
+slow or failed write never delays the send, and the send job can retry against
+the last good artifact.
 
-The process runs continuously and triggers the pipeline at the configured time each weekday.
+GitHub cron is UTC and does not observe daylight saving, so each workflow
+registers both candidate UTC times and a guard step exits the run that is not
+actually the right hour in New York.
 
----
+### Secrets to set
 
-## Deployment
-
-### Option A: Railway.app (recommended for simplicity)
-
-Railway's free tier is sufficient for this workload.
-
-1. Push the project to a GitHub repository.
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
-3. Set all environment variables in the Railway dashboard under **Variables**.
-4. In **Settings → Deploy**, set the start command:
-   ```
-   python scheduler.py
-   ```
-5. Deploy. Railway keeps the process alive and restarts it on crash.
-
-**No Procfile required** — Railway detects the start command from settings.
-
----
-
-### Option B: Linux VPS with systemd
-
-Replace `/opt/daily-briefing` with your actual install path.
-
-**1. Install the app:**
-
-```bash
-sudo mkdir -p /opt/daily-briefing
-sudo chown $USER:$USER /opt/daily-briefing
-git clone https://github.com/your-org/daily-briefing.git /opt/daily-briefing
-cd /opt/daily-briefing
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with your values
-```
-
-**2. Create a systemd service:**
-
-```ini
-# /etc/systemd/system/morning-briefing.service
-[Unit]
-Description=Morning Briefing Scheduler
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=your-user
-WorkingDirectory=/opt/daily-briefing
-EnvironmentFile=/opt/daily-briefing/.env
-ExecStart=/opt/daily-briefing/.venv/bin/python scheduler.py
-Restart=always
-RestartSec=30
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**3. Enable and start:**
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable morning-briefing
-sudo systemctl start morning-briefing
-sudo journalctl -u morning-briefing -f    # tail logs
-```
-
----
-
-### Option C: GitHub Actions (lightweight, no persistent server)
-
-Use this if you don't have a server and want GitHub to trigger the run.
-
-**Note:** GitHub Actions has no persistent process — it wakes up, runs the pipeline, and exits. There is no retry between runs (only within a run). Suitable for low-criticality use cases.
-
-Create `.github/workflows/morning-briefing.yml`:
-
-```yaml
-name: Morning Briefing
-
-on:
-  schedule:
-    # 9:30 AM ET = 13:30 UTC (adjust for DST manually, or use a timezone-aware cron service)
-    - cron: '30 13 * * 1-5'
-  workflow_dispatch:    # allows manual trigger from the Actions tab
-
-jobs:
-  send-briefing:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run pipeline
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_MODEL: claude-haiku-4-5
-          SMTP_HOST: smtp.gmail.com
-          SMTP_PORT: "587"
-          SMTP_USER: ${{ secrets.SENDER_EMAIL }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
-          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
-          TIMEZONE: America/New_York
-        run: python main.py
-```
-
-Add all secrets in **GitHub repo → Settings → Secrets and variables → Actions**.
-
-**Limitation:** GitHub Actions cron has ~1–5 min jitter and pauses on inactive repos. For production use, prefer Railway or a VPS.
-
----
-
-## Monitoring
-
-Every pipeline run appends a structured entry to `briefing_log.json`:
-
-```json
-{
-  "timestamp": "2025-05-21T09:30:12.345Z",
-  "dry_run": false,
-  "status": "success",
-  "sections_generated": ["top_story", "markets_macro", "corporate_intelligence", ...],
-  "sources_used": ["reuters_business", "cnbc_markets", "yfinance", ...],
-  "sources_failed": [],
-  "delivery": {"method": "sendgrid", "success": true, "recipients": [...]},
-  "error": null
-}
-```
-
-Status values: `success`, `delivery_failed`, `failed`, `config_error`, `dry_run_complete`.
-
-The log retains the last 180 entries. On Railway/VPS, the log is ephemeral unless you mount persistent storage or ship logs to an external service (e.g., Datadog, Logtail).
-
----
-
-## Customization
-
-| What to change | Where |
+| Secret | Purpose |
 |---|---|
-| Delivery time | `SCHEDULE_HOUR` / `SCHEDULE_MINUTE` in `.env` |
-| AI model | `ANTHROPIC_MODEL` in `.env` |
-| Add/remove news sources | `RSS_FEEDS` dict in `news_aggregator.py` |
-| Email tone/style | System prompt in `ai_synthesizer.py` |
-| Template design | `templates/briefing.html` |
-| Recipient list | `RECIPIENT_EMAILS` in `.env` (comma-separated) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Subscription-billed generation in CI. Generate with `claude setup-token`. |
+| `FRED_API_KEY` | Required. |
+| `FINNHUB_API_KEY` | Calendars and merger news. |
+| `NEWS_API_KEY` | Optional. |
+| `SENDER_EMAIL`, `RECIPIENT_EMAILS`, `ADMIN_EMAIL` | Addresses. |
+| `SMTP_PASSWORD` or `SENDGRID_API_KEY` | Delivery. |
+| `ANTHROPIC_API_KEY` | Optional metered fallback. |
 
----
+## Degradation
 
-## Troubleshooting
+Nothing in the pipeline is allowed to block the morning.
 
-**`ANTHROPIC_API_KEY` not set** → Copy `.env.example` to `.env` and fill in all required values.
+- A dead news source logs and skips.
+- A missing FRED series drops its row; the rest of the section still renders.
+- An implausible price move (a stale baseline, a split, a bad bar) has its
+  change suppressed and the level kept, rather than publishing a wrong number.
+- A failed model call falls back to that desk's real headlines as links.
+- No model backend at all ships the full deterministic edition, clearly banner-labeled.
+- A quiet desk says so and gives standing context instead of inventing a story.
 
-**SendGrid 403 error** → Verify your sender address in the SendGrid dashboard (Settings → Sender Authentication).
+## Maintenance
 
-**Market data shows N/A** → yfinance may be rate-limited. The run will still complete — Claude will note missing data in the briefing.
+RSS feeds rot quietly. Audit them:
 
-**RSS feeds returning empty** → Some feeds (FT, WSJ) may block scraping from cloud IPs. Add a custom `User-Agent` or replace the feed URL with an alternative. The pipeline skips failed sources and logs them.
+```bash
+python tools/feed_check.py
+```
 
-**Template renders incorrectly in Outlook** → Outlook uses Word's HTML renderer. The template uses table-based layout for maximum compatibility, but test with [Litmus](https://litmus.com) or [Email on Acid](https://www.emailonacid.com) for full client coverage.
+This flags feeds that return nothing and feeds still responding with stale
+content. Reuters, FT and Treasury have retired their public RSS; WSJ and
+MarketWatch marketpulse respond but serve frozen 2025 content. All were removed
+for that reason.
 
----
+Two things need a calendar check:
 
-## Data Sources
+- **FOMC dates** are hardcoded in `market_engine.FOMC_DECISION_DATES`. Update
+  annually from federalreserve.gov when the next year's schedule publishes.
+- **Stooq** is now a fallback only. It began returning an HTML block page
+  instead of CSV, so Yahoo is primary for all prices.
 
-| Source | Method | Notes |
-|---|---|---|
-| Reuters | RSS | Business and markets feeds |
-| CNBC | RSS | Markets and finance feeds |
-| MarketWatch | RSS | Top stories and market pulse |
-| Yahoo Finance | RSS + yfinance | Headlines + real-time market data |
-| WSJ | RSS | Markets feed (some content gated) |
-| Barron's | RSS | Market data feed |
-| Federal Reserve | RSS | All press releases |
-| Seeking Alpha | RSS | Market currents |
-| SEC EDGAR | REST API | Same-day 8-K filings |
-| yfinance | Library | S&P 500, NASDAQ, Dow, 10Y Treasury, DXY, WTI, Gold, BTC |
+## A note on the implied policy path
 
-Market data is sourced directly from Yahoo Finance via yfinance and is not processed by the AI model. The AI synthesizes only the news narrative sections.
+Cut and hike expectations are derived from the Treasury curve, not from fed
+funds futures. The 1-year yield approximates the expected average overnight rate
+over the coming year; doubling the gap to the current effective funds rate
+approximates the cumulative move under a gradual path. Term premium is ignored.
 
----
+These figures will differ modestly from CME FedWatch, which is the number an
+interviewer is most likely to have in mind. The email states the methodology so
+the difference can be caveated out loud. Treat it as directionally right rather
+than precise.
 
-## License
+## Not investment advice
 
-MIT
+Built for interview preparation. Not investment advice and not a recommendation
+to buy or sell any security.

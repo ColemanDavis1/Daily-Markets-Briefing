@@ -1,1049 +1,878 @@
 """
-AI synthesis module — multi-call Claude (Anthropic) backend.
+Synthesis layer.
 
-Makes one Claude API call per section. Each call receives only the
-headlines relevant to that section, producing a focused narrative +
-structured data bullets rather than a compressed single-call summary.
+Turns the aggregated sources and the deterministic market engine into the
+newsletter's written sections.
+
+Division of labor:
+  market_engine.py  produces every number and a rule-based reading of it
+  this module       produces the explanation, the interview framing, and the
+                    editorial judgment about which story matters
+
+The model is handed the computed fact sheet as authoritative context and is
+instructed that it may explain those figures but must not introduce a number
+that is not either in the fact sheet or in the day's source articles. A second
+verification pass then checks the draft against the same fact sheet and strips
+anything unsupported.
+
+Every section degrades independently. If a model call fails, that section
+falls back to a deterministic summary with live source links rather than
+blocking the run or shipping invented content.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 import time
-from datetime import datetime
 from typing import Any
 
-import anthropic
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
-
+from claude_client import ModelUnavailable, call_model_json, backend_status
 from config import get_config
+from groups import ALL_GROUPS, COVERAGE_GROUPS, GROUP_ORDER, PRODUCT_GROUPS
 
 logger = logging.getLogger(__name__)
 cfg = get_config()
 
-# ---------------------------------------------------------------------------
-# Section definitions (order controls email layout)
-# ---------------------------------------------------------------------------
-
-SECTION_CONFIGS: dict[str, dict] = {
-    "markets_macro": {
-        "title": "Markets & Macro",
-        "color": "#0A4A7A",
-        "editorial_focus": (
-            "Lead with the single most important market development and WHY it matters at a structural level.\n\n"
-            "REQUIRED ANALYSIS — cover all that are supported by today's data:\n"
-            "1. EQUITY STRUCTURE: Analyze S&P 500, NASDAQ, Dow, and Russell 2000 divergences. "
-            "What do large-cap vs. small-cap and growth vs. value differentials reveal about risk appetite and breadth? Use specific index levels.\n"
-            "2. SECTOR ROTATION: Identify the leading and lagging S&P sectors from today's ETF performance data. "
-            "What does this rotation signal — risk-on/off, cyclical/defensive shift, growth/value regime change? "
-            "Connect each sector move to its macro driver.\n"
-            "3. YIELD CURVE: Analyze the full curve (2Y, 5Y, 10Y, 30Y). Is the curve inverted, normalizing, or steepening? "
-            "What does the 2Y-10Y spread imply for recession probability and Fed expectations? "
-            "How did rate moves affect equity valuations today?\n"
-            "4. DOLLAR & CURRENCIES: Interpret DXY, EUR/USD, GBP/USD, and USD/JPY moves. "
-            "What are the implications for US multinational earnings, dollar-denominated commodities, and EM stress?\n"
-            "5. COMMODITY SIGNALS: What are gold (safe-haven/real-rate proxy), copper (industrial growth proxy), "
-            "and oil saying? Are they confirming or contradicting the equity narrative? Flag any divergence.\n"
-            "6. INTERNATIONAL CONTEXT: How do European and Asian indices compare to US markets today? "
-            "What macro forces explain the divergences?\n"
-            "7. CROSS-ASSET SYNTHESIS: Synthesize bonds, currencies, commodities, and equities into a unified thesis. "
-            "Are the signals corroborating or divergent? What does the cross-asset picture imply for the week ahead?\n"
-            "8. VOLATILITY: Interpret VIX level and trend relative to historical context."
-        ),
-    },
-    "corporate_earnings": {
-        "title": "Corporate & Earnings",
-        "color": "#1A3A5C",
-        "editorial_focus": (
-            "Lead with the most market-moving earnings result or corporate action, fully quantified.\n\n"
-            "REQUIRED ANALYSIS:\n"
-            "1. EARNINGS RESULTS: For any reported quarter, state: actual EPS vs. consensus, actual revenue vs. consensus, "
-            "the beat/miss percentage, and — most critically — what GUIDANCE implies vs. prior expectations.\n"
-            "2. GUIDANCE ANALYSIS: Guidance is more important than reported results. "
-            "What did management say about forward revenue, margins, and macro conditions? "
-            "Did they raise, lower, or maintain outlook? What is the delta?\n"
-            "3. M&A & CAPITAL ALLOCATION: For any deals, state deal value, premium to market, strategic rationale, "
-            "and whether analysts view it as accretive or dilutive. Cover buyback authorizations and dividend changes.\n"
-            "4. ANALYST CALLS: Include specific price target changes (old vs. new), the key thesis, "
-            "and the sector implications of upgrades/downgrades.\n"
-            "5. EXECUTIVE CHANGES: Frame any leadership changes in terms of strategic direction shift.\n"
-            "6. UPCOMING CATALYSTS: Flag major companies reporting this week, what the consensus estimates are, "
-            "and which specific metrics will determine the market reaction."
-        ),
-    },
-    "technology_ai": {
-        "title": "Technology & AI",
-        "color": "#0A3A6A",
-        "editorial_focus": (
-            "Cover the most material technology and AI developments for institutional investors.\n\n"
-            "REQUIRED ANALYSIS:\n"
-            "1. AI COMPETITIVE DYNAMICS: New model releases, capability benchmarks, infrastructure investments. "
-            "Who wins and loses competitively? Frame in terms of market share and valuation implications for major players.\n"
-            "2. SEMICONDUCTOR SUPPLY CHAIN: Availability, pricing, lead times, and capacity expansion. "
-            "Connect directly to major beneficiaries (NVDA, AMD, ASML, TSMC, AMAT).\n"
-            "3. FUNDING & M&A: State valuations, investor composition, and what each deal signals about "
-            "where institutional capital is flowing and which AI/tech themes are gaining traction.\n"
-            "4. REGULATORY RISK: Antitrust actions, data privacy enforcement, AI governance developments. "
-            "Frame specific market and operational impacts.\n"
-            "5. INFRASTRUCTURE BUILDOUT: Data center, power, and networking capex commitments. "
-            "Identify the picks-and-shovels beneficiaries and the capex cycle timeline.\n"
-            "6. HYPERSCALER DYNAMICS: Azure, AWS, Google Cloud market share shifts and their implications "
-            "for enterprise software and AI services demand."
-        ),
-    },
-    "healthcare": {
-        "title": "Healthcare",
-        "color": "#0A5A4A",
-        "editorial_focus": (
-            "Cover FDA decisions, clinical data, and policy with institutional-grade analytical depth.\n\n"
-            "REQUIRED ANALYSIS:\n"
-            "1. FDA DECISIONS: For approvals — state indication, addressable patient population, "
-            "projected peak sales (if analyst estimates available), competitive landscape, and pricing dynamics. "
-            "For rejections/CRLs — state the deficiency and remediation pathway with timeline.\n"
-            "2. CLINICAL DATA: Report primary endpoint results, statistical significance (p-values where available), "
-            "comparison to prior clinical benchmarks, and what this means for the asset's commercial trajectory.\n"
-            "3. M&A & LICENSING: State deal value, premium to market, pipeline asset acquired, "
-            "strategic fit, and any projected synergies.\n"
-            "4. POLICY & REIMBURSEMENT: CMS coverage decisions, IRA drug price negotiation developments, "
-            "and their specific revenue impact by company.\n"
-            "5. SECTOR POSITIONING: Is healthcare acting defensively (risk-off rotation) or "
-            "offensively (drug cycle/innovation tailwind)?\n"
-            "6. UPCOMING CATALYSTS: PDUFA dates, pivotal trial readouts, and policy decisions in the next 30-60 days."
-        ),
-    },
-    "industrials": {
-        "title": "Industrials",
-        "color": "#3A2A6A",
-        "editorial_focus": (
-            "Cover manufacturing, defense, and logistics with quantified macro linkages.\n\n"
-            "REQUIRED ANALYSIS:\n"
-            "1. MANUFACTURING DATA: PMI readings (actual vs. consensus, sub-components: new orders, employment, "
-            "prices paid, inventories). What is the manufacturing cycle signal — expansion, contraction, or inflection?\n"
-            "2. DEFENSE CONTRACTING: Contract awards with dollar values, duration, strategic context, "
-            "and which prime contractors benefit. Frame in budget and geopolitical context.\n"
-            "3. INFRASTRUCTURE: Federal spending deployment, project awards, and materials demand implications "
-            "from infrastructure legislation.\n"
-            "4. LOGISTICS & SUPPLY CHAIN: Freight rates, inventory levels, port conditions — "
-            "leading indicators of industrial demand and inflationary pressure.\n"
-            "5. LABOR DYNAMICS: Union contract outcomes, wage settlements, and their direct margin implications "
-            "for major industrial companies. "
-            "6. CAPEX SIGNALS: Major equipment orders or plant investment as forward demand indicators "
-            "for the industrial cycle."
-        ),
-    },
-    "energy_commodities": {
-        "title": "Energy & Commodities",
-        "color": "#5A3A0A",
-        "editorial_focus": (
-            "Cover energy markets and commodities as both investment themes and macro indicators.\n\n"
-            "REQUIRED ANALYSIS:\n"
-            "1. OIL MARKET STRUCTURE: WTI and Brent absolute levels and daily move with specific drivers. "
-            "OPEC+ production signals and compliance. US inventory data vs. expectations. "
-            "What is the marginal cost context for current prices?\n"
-            "2. ENERGY SECTOR: Upstream vs. downstream performance divergence. "
-            "E&P vs. services vs. integrated companies. Refining margin dynamics.\n"
-            "3. NATURAL GAS & LNG: Price dynamics, storage vs. 5-year average, LNG export flows and "
-            "European/Asian demand signals.\n"
-            "4. METALS AS MACRO SIGNALS: Copper as industrial growth proxy, gold as real-rate/safe-haven indicator, "
-            "silver as industrial/monetary hybrid. Interpret current levels in that analytical framework — "
-            "what are these metals signaling about growth and inflation expectations?\n"
-            "5. ENERGY TRANSITION: Renewable capacity additions, battery/storage economics, policy developments. "
-            "Frame implications for traditional energy investment thesis.\n"
-            "6. COMMODITY INFLATION PASS-THROUGH: Connect price moves to CPI/PPI implications "
-            "and corporate input cost/margin risk."
-        ),
-    },
-    "geopolitical_risk": {
-        "title": "Geopolitical Risk",
-        "color": "#5A0A0A",
-        "editorial_focus": (
-            "Every geopolitical development must be translated into a specific market, supply chain, or regulatory impact. "
-            "Do not cover geopolitics without a concrete market angle.\n\n"
-            "REQUIRED ANALYSIS:\n"
-            "1. TARIFF & TRADE: New tariffs, exemptions, or negotiations. State affected trade volume in dollars, "
-            "sectors impacted, company-level winners and losers, and consumer price implications.\n"
-            "2. SANCTIONS: New sanctions or enforcement actions. State affected commodities, financial flows, "
-            "alternative sourcing implications, and which EM economies face collateral risk.\n"
-            "3. ACTIVE CONFLICTS: Only cover if there are direct commodity, logistics, or defense spending implications. "
-            "State the specific market impact with quantification where possible.\n"
-            "4. ELECTION & POLICY RISK: Upcoming elections or regime changes that could materially affect "
-            "market structure. Frame as binary scenario analysis with market outcomes.\n"
-            "5. EMERGING MARKET STRESS: Sovereign debt, currency crises, or capital outflows with "
-            "potential contagion to developed market assets.\n"
-            "6. REGULATORY ENFORCEMENT: FTC, DOJ, EU competition authority actions that reshape "
-            "corporate strategies and sector valuations."
-        ),
-    },
-    "economic_data": {
-        "title": "Economic Data & Fed",
-        "color": "#0A3A2A",
-        "editorial_focus": (
-            "Lead with any data released today and its Fed policy implications. This section sets rate expectations.\n\n"
-            "REQUIRED ANALYSIS:\n"
-            "1. TODAY'S DATA RELEASES: For each release, state: actual vs. consensus, prior reading, "
-            "any revision to prior month, and the directional delta from expectations. "
-            "What does each print imply for the Fed? Be precise.\n"
-            "2. INFLATION REGIME: Current CPI, Core CPI, and Core PCE (the Fed's preferred measure) "
-            "in the context of the 2% target. Assess the trajectory — MoM, YoY, and 3-month annualized. "
-            "Are we converging toward target or stalling?\n"
-            "3. LABOR MARKET: Payrolls, unemployment rate, wage growth, and participation rate. "
-            "Distinguish cyclical from structural weakness. Is the labor market cooling enough for the Fed?\n"
-            "4. FED COMMUNICATIONS: Any FOMC member speeches or statements. "
-            "Identify the hawkish vs. dovish divide and where consensus is shifting.\n"
-            "5. RATE EXPECTATIONS: What does the market currently price for the next FOMC meeting "
-            "and year-end? How did today's data move those probabilities?\n"
-            "6. YIELD CURVE IMPLICATIONS: Connect today's economic data to the yield curve shape and "
-            "what it implies for recession probability and the real economy.\n"
-            "7. GROWTH TRAJECTORY: GDP, industrial production, retail sales, and housing — "
-            "what is the composite picture of economic momentum?"
-        ),
-    },
-    "what_to_watch": {
-        "title": "What to Watch",
-        "color": "#2A0A5A",
-        "editorial_focus": (
-            "Identify the 5-6 most important catalysts in the next 24-72 hours. "
-            "This is the forward intelligence section — actionable, specific, time-bound.\n\n"
-            "For EACH catalyst provide:\n"
-            "- WHAT: Exact event or data release\n"
-            "- WHEN: Specific time if known\n"
-            "- WHY IT MATTERS: What market narrative it confirms or refutes\n"
-            "- BULL SCENARIO: What would be market-positive and estimated market impact\n"
-            "- BEAR SCENARIO: What would be market-negative and estimated market impact\n"
-            "- CONSENSUS: Specific number or expectation if available\n\n"
-            "REQUIRED CATALYSTS TO IDENTIFY:\n"
-            "1. Scheduled economic data releases (CPI, PCE, payrolls, GDP, PMIs) with consensus estimates\n"
-            "2. Fed speakers or FOMC events and their known policy stances\n"
-            "3. Major earnings reports with EPS/revenue consensus and the one metric that will drive the reaction\n"
-            "4. Geopolitical deadlines or binary events\n"
-            "5. Technical levels: key S&P 500 support/resistance that could trigger systematic flows\n"
-            "6. International market catalysts (ECB, BOJ, China policy)"
-        ),
-    },
-}
 
 # ---------------------------------------------------------------------------
-# Per-section system prompt template
+# Voice
 # ---------------------------------------------------------------------------
 
-SECTION_SYSTEM_PROMPT = """You are the chief markets editor at the world's most authoritative financial intelligence publication — serving portfolio managers, hedge fund analysts, chief investment officers, and senior executives who make multi-billion-dollar decisions based on your analysis. Your writing combines the analytical rigor of a top-tier sell-side research note with the narrative clarity of award-winning financial journalism.
+_HOUSE_STYLE = """You write the morning markets note for an investment banking desk.
 
-You are writing the {section_title} section of today's morning briefing.
+Your reader is preparing for investment banking interviews. They will be asked
+"what's going on in the markets?" and "walk me through a deal you've been
+following." Your job is to make them able to answer those questions with
+specifics and with the reasoning behind them.
 
-YOUR JOB IS TO EXPLAIN, NOT TO REPEAT. The reader can already see the headlines and the raw numbers in a data table above your section. Your value is interpretation: tell them what the numbers and headlines actually MEAN, WHY they moved, and WHY it matters. Never restate a headline verbatim — translate it into insight. Write for a smart, engaged reader who is not a markets specialist: keep the institutional depth, but make every conclusion legible by explaining the mechanism behind it and briefly defining any jargon the first time you use it (e.g., "the 2s10s spread — the gap between 2- and 10-year Treasury yields, a classic recession gauge").
+VOICE
+Write in clean, declarative prose. Confident, never breathless. You are
+explaining to a sharp person who does not yet have the reps, so define a term
+briefly the first time you use it, then use it normally. No hedging filler, no
+"it remains to be seen," no restating the headline back to the reader.
 
-EDITORIAL MANDATE:
-{editorial_focus}
+THE ONE RULE THAT MATTERS
+Explain the mechanism. Never state that something moved without stating why it
+moved and what it implies. "Yields fell 8bp" is worthless. "Yields fell 8bp
+after the soft payrolls print, which lowers the discount rate applied to future
+earnings and mechanically lifts long-duration growth equities" is the standard.
 
-OUTPUT FORMAT — return ONLY valid JSON, no markdown fences, matching this schema exactly:
+NUMBERS
+You are given a VERIFIED MARKET FACTS block. Those figures are computed from
+primary sources and are authoritative. You may cite any of them. You may also
+cite figures stated explicitly in the source articles provided. You may not
+introduce any other number from memory, and you may not adjust, round
+differently, or extrapolate the verified figures. If you want to make a point
+that needs a number you do not have, make the point qualitatively instead.
+
+NEVER
+Never invent a company, a deal, a price, a person, or a quote. Never describe an
+event that is not in the provided sources. If the sources are thin, say so
+plainly and write about the standing context instead. A short honest section is
+correct; a padded invented one is a failure."""
+
+
+_JSON_RULES = """OUTPUT
+Return exactly one valid JSON object and nothing else. No markdown fences, no
+preamble, no trailing commentary. Use \\n\\n between paragraphs inside string
+values. Do not include any key not in the schema."""
+
+
+# ---------------------------------------------------------------------------
+# Section plan
+# ---------------------------------------------------------------------------
+
+def _lead_sections() -> list[dict]:
+    return [
+        {
+            "key": "editor_note",
+            "title": "The Lead",
+            "kind": "lead",
+            "accent": "#0F172A",
+            "short": "LED",
+            "words": 130,
+        },
+        {
+            "key": "market_wrap",
+            "title": "Market Wrap",
+            "subtitle": "Where Everything Closed and Why",
+            "kind": "lead",
+            "accent": "#0369A1",
+            "short": "MKT",
+            "words": 380,
+        },
+        {
+            "key": "rates_fed",
+            "title": "Rates, the Fed & Funding",
+            "subtitle": "The Curve, SOFR and the Policy Path",
+            "kind": "lead",
+            "accent": "#065F46",
+            "short": "RTS",
+            "words": 520,
+        },
+        {
+            "key": "econ_data",
+            "title": "Economic Data",
+            "subtitle": "Prints, Revisions and the Fed Read",
+            "kind": "lead",
+            "accent": "#7C2D12",
+            "short": "ECO",
+            "words": 230,
+        },
+    ]
+
+
+def build_section_plan() -> list[dict]:
+    """Ordered list of every section the newsletter will attempt to produce."""
+    plan = _lead_sections()
+
+    for key in GROUP_ORDER:
+        if key in cfg.skip_groups:
+            continue
+        meta = ALL_GROUPS[key]
+        words = (
+            cfg.coverage_story_words if key in COVERAGE_GROUPS
+            else cfg.product_story_words if key in PRODUCT_GROUPS
+            else 220
+        )
+        plan.append({
+            "key": key,
+            "title": meta["title"],
+            "subtitle": meta.get("subtitle", ""),
+            "kind": meta.get("kind", "coverage"),
+            "accent": meta.get("accent", "#334155"),
+            "short": meta.get("short", key[:3].upper()),
+            "desk_note": meta.get("desk_note", ""),
+            "focus": meta.get("focus", ""),
+            "words": 260 if key == "what_to_watch" else words,
+        })
+
+    return plan
+
+
+# ---------------------------------------------------------------------------
+# Source formatting
+# ---------------------------------------------------------------------------
+
+def _format_sources(items: list[dict], limit: int = 12) -> tuple[str, dict[str, dict]]:
+    """
+    Number the candidate stories so the model can cite them by id.
+
+    Returns the prompt text and a lookup used to resolve the ids the model
+    returns into real publisher names and URLs. Citations are therefore always
+    links to articles that actually exist in today's pull.
+    """
+    lookup: dict[str, dict] = {}
+    lines: list[str] = []
+
+    for i, item in enumerate(items[:limit], start=1):
+        sid = f"S{i}"
+        lookup[sid] = {
+            "title": item.get("headline", ""),
+            "url": item.get("url", ""),
+            "publisher": item.get("source_name") or item.get("source", ""),
+            "published": item.get("published", ""),
+        }
+        summary = (item.get("summary") or "").strip()
+        lines.append(
+            f"[{sid}] {item.get('headline', '')}"
+            + (f"\n      {summary[:400]}" if summary else "")
+            + f"\n      source: {lookup[sid]['publisher']}"
+        )
+
+    return ("\n".join(lines) if lines else "(no qualifying articles in today's pull)"), lookup
+
+
+def _resolve_sources(ids: Any, lookup: dict[str, dict]) -> list[dict]:
+    out: list[dict] = []
+    seen: set[str] = set()
+    if not isinstance(ids, list):
+        return out
+    for raw in ids:
+        sid = str(raw).strip().upper()
+        entry = lookup.get(sid)
+        if entry and entry.get("url") and entry["url"] not in seen:
+            seen.add(entry["url"])
+            out.append(entry)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Prompt builders
+# ---------------------------------------------------------------------------
+
+_STORY_SCHEMA = """{
+  "headline": "the story in one specific sentence, naming the actors and the number that matters",
+  "quiet_day": false,
+  "narrative": "%(words)d words, 2-3 paragraphs separated by \\n\\n. Mechanism first: what happened, why it happened, who it affects, what it implies next.",
+  "why_it_matters": "one sentence on the read-through beyond this single story",
+  "interview_question": "the question an interviewer would actually ask coming out of this story, phrased the way a banker would ask it",
+  "interview_answer": "3-5 sentences, written to be spoken out loud, that answer that question completely. Start with the direct answer, then the supporting numbers, then the implication. No preamble.",
+  "numbers": [{"label": "what it is", "value": "the figure with units"}],
+  "source_ids": ["S1", "S3"]
+}"""
+
+
+def _story_prompt(section: dict, sources_text: str, fact_sheet: str, extra: str = "") -> str:
+    words = section.get("words", 200)
+    quiet_clause = (
+        "\n\nIF THERE IS NO REAL STORY TODAY\n"
+        "Set \"quiet_day\": true, say in the first sentence that the desk was "
+        "quiet, and then spend the section on standing context: where this "
+        "group's activity, spreads, valuations or pipeline currently sit based "
+        "on the verified facts and whatever the sources do support. Do not "
+        "manufacture a story. A reader who is told the desk was quiet and given "
+        "real context is better served than one given filler."
+    )
+
+    return f"""{fact_sheet}
+
+TODAY'S CANDIDATE STORIES FOR THIS DESK
+{sources_text}
+
+YOUR ASSIGNMENT
+Write the {section['title']} section of today's note.
+
+EDITORIAL MANDATE
+{section.get('focus', '')}
+{extra}
+
+Select the single most consequential story from the candidates above and write
+about that one. Do not summarize the list. Cite the ids of every source you
+drew on in "source_ids".{quiet_clause}
+
+{_JSON_RULES}
+
+SCHEMA
+{_STORY_SCHEMA % {"words": words}}"""
+
+
+def _editor_note_prompt(fact_sheet: str, headlines_text: str) -> str:
+    return f"""{fact_sheet}
+
+TODAY'S MOST SIGNIFICANT HEADLINES ACROSS ALL DESKS
+{headlines_text}
+
+YOUR ASSIGNMENT
+Write the opening of today's note: the single most important thing a person
+walking into a markets conversation this morning needs to have in their head.
+
+Pick one thing. Not a list. It might be a data print, a policy signal, a move
+in the curve, or a landmark deal. Justify the choice implicitly by explaining
+why it dominates everything else on the page.
+
+{_JSON_RULES}
+
+SCHEMA
 {{
-  "bottom_line": "1-2 plain-language sentences capturing the single most important takeaway of this section — what a busy reader must understand if they read nothing else. State the 'so what,' not just the 'what.'",
-  "narrative": "4-5 paragraphs of expert financial analysis. Separate paragraphs with \\n\\n. Write with authority, precision, and quantitative rigor — but make every point legible by explaining the cause-and-effect mechanism. Minimum 4 sentences per paragraph. Synthesize multiple data points into a coherent analytical thesis — never list headlines sequentially. Every claim requires a specific number. For each key development follow the chain: what happened -> WHY it happened -> why it matters / what to watch next. Identify the bull and bear interpretation of key developments where relevant.",
-  "bullets": [
-    {{"label": "Ticker / Metric / Event", "value": "specific figure with units, sign, and context", "note": "a full explanatory sentence: WHY this moved or what it implies forward — not a restatement of the label"}}
-  ]
-}}
-
-NON-NEGOTIABLE RULES:
-1. Minimum 4 paragraphs, 4-5 sentences each. This is a deep, explanatory institutional read — no summaries, no padding, no headline lists.
-2. Explain the mechanism behind every move. Not "stocks rose" and not even "S&P 500 gained 1.2% to 5,280" alone, but "the S&P 500 gained 1.2% to 5,280 as falling Treasury yields (down 8bps) lowered the discount rate on future earnings, which disproportionately lifts richly-valued technology names."
-3. Define jargon briefly on first use so a non-specialist can follow the reasoning.
-4. 5-7 bullet points. Lead with the most market-critical data. Include specific numbers in every bullet, and make each note explain significance.
-5. Every consensus beat/miss must cite both the actual figure and the consensus estimate, then explain why the gap matters.
-6. Flag analyst opinions with "(analyst view)." Attribute institutional views if sourced.
-7. Frame key developments with asymmetry: what is the bull case? What is the bear case?
-8. If a data point has no market implication, exclude it.
-9. CRITICAL: Only reference events explicitly present in today's provided data. Do NOT use training knowledge to add prices, events, or company news not in the inputs.
-10. Return ONLY the JSON object. Nothing else."""
-
-# ---------------------------------------------------------------------------
-# Light per-section system prompt — concise, curated
-# ---------------------------------------------------------------------------
-
-LIGHT_SECTION_SYSTEM_PROMPT = """You are the editor of a concise daily markets intelligence briefing. Your reader follows finance, the broader market, and sector/industry developments closely, but wants only the highest-signal takeaways today — not exhaustive coverage.
-
-You are writing the {section_title} section.
-
-YOUR JOB: curate hard. Surface ONLY the 2-4 most relevant and important developments in this area today, chosen for their materiality to markets and investors. Lead with what matters most. Explain the "so what" in plain language — never restate a headline verbatim; translate each development into what it means and why it moved. Briefly define any jargon and tie each development to a market implication. If little of importance happened in this area today, say so in one sentence rather than padding.
-
-Areas to weigh (cover only those with genuine, material news in today's data):
-{editorial_focus}
-
-OUTPUT FORMAT — return ONLY valid JSON, no markdown fences, matching this schema exactly:
-{{
-  "bottom_line": "1 sentence: the single most important takeaway of this section — the 'so what,' not just the 'what.'",
-  "narrative": "1-2 tight paragraphs (3-4 sentences each), covering only the 2-4 most relevant developments. Synthesize into a thesis — do not list headlines sequentially. Every claim needs a specific number. Be high-signal and brief. If nothing material happened, say so in one sentence.",
-  "bullets": [
-    {{"label": "Ticker / Metric / Event", "value": "specific figure with units and sign", "note": "one short clause on why it matters"}}
-  ]
-}}
-
-NON-NEGOTIABLE RULES:
-1. Be concise and high-signal. No padding, no filler, no exhaustive headline lists.
-2. 3-4 bullets maximum, most market-critical first. Include a specific number in each.
-3. Every consensus beat/miss must cite the actual figure and the estimate.
-4. Flag analyst opinions with "(analyst view)."
-5. Only reference events explicitly present in today's provided data. Do NOT use training knowledge to add prices, events, or company news not in the inputs.
-6. Return ONLY the JSON object. Nothing else."""
-
-# ---------------------------------------------------------------------------
-# Digest insight prompt — one short, data-grounded interpretation per section
-# ---------------------------------------------------------------------------
-
-INSIGHT_SYSTEM_PROMPT = """You are a markets strategist adding a single sharp insight to the {section_title} section of a daily briefing assembled from live market data and headlines.
-
-The reader can already see the prices, macro readings, and headlines. Your job is to tell them what those data points TOGETHER signal that is not obvious from any single line — the trend, the tension, the divergence, or the "so what."
-
-RULES:
-1. 1-2 sentences, under 45 words. Lead with the signal, not a recap.
-2. Reference at least one concrete figure from the provided data (a price move, level, spread, or macro reading).
-3. Ground every claim strictly in the data and headlines provided. Never invent prices, events, or company news.
-4. Plain text only — no JSON, no markdown, no labels or preamble like "Insight:".
-5. If today's data is too thin for a real read, return one sentence noting it was a quiet session for this area.
-6. Write with authority and no hedging or filler."""
-
-# ---------------------------------------------------------------------------
-# Verification prompt — second pass fact-check
-# ---------------------------------------------------------------------------
-
-VERIFY_SYSTEM_PROMPT = """You are a financial fact-checker reviewing a morning briefing section.
-A colleague drafted the content below from the source headlines provided. Your job is to verify accuracy.
-
-RULES:
-1. Every specific claim (price, percentage, earnings figure, company action, data point) must be
-   directly traceable to the source headlines or market data provided.
-2. If a claim cannot be verified from the sources: soften it with "reportedly" or remove it entirely.
-3. If a bullet "value" contains a specific number not present in the source data, clear it to "".
-4. Never add new information. Only correct or remove what is unverifiable.
-5. Analyst opinions must remain labeled "(analyst view)".
-6. Preserve narrative length and the bottom_line — do not summarise or shorten, only fix unsupported facts.
-7. Return ONLY valid JSON matching this schema exactly:
-{{
-  "bottom_line": "...",
-  "narrative": "...",
-  "bullets": [{{"label": "...", "value": "...", "note": "..."}}]
+  "headline": "a specific, declarative sentence naming the day's dominant story",
+  "note": "130 words, 1-2 paragraphs separated by \\n\\n, explaining what happened and why it outranks everything else today",
+  "one_thing": "a single sentence, under 30 words, that the reader could say out loud if asked 'what's going on in the markets?' Make it specific and quantified.",
+  "source_ids": ["S1"]
 }}"""
 
+
+def _market_wrap_prompt(fact_sheet: str, sources_text: str) -> str:
+    return f"""{fact_sheet}
+
+RELEVANT HEADLINES
+{sources_text}
+
+YOUR ASSIGNMENT
+Write the Market Wrap. The reader can see the price tables, so do not recite
+them. Explain the session.
+
+Cover, in whatever order the day justifies:
+- What actually drove the index moves, and whether the move was broad or narrow
+- What sector rotation says about risk appetite right now
+- Whether the cross-asset picture (rates, dollar, gold, copper, oil) confirms
+  or contradicts what equities did, and flag any divergence explicitly
+- What the overnight futures and the Asian and European sessions add
+- The VIX level in context, including what it implies for the issuance window
+
+Note for the reader that cash index levels are the prior session's close, since
+this note goes out before the US open.
+
+{_JSON_RULES}
+
+SCHEMA
+{_STORY_SCHEMA % {"words": 380}}"""
+
+
+def _rates_prompt(fact_sheet: str, sources_text: str) -> str:
+    return f"""{fact_sheet}
+
+RELEVANT HEADLINES
+{sources_text}
+
+YOUR ASSIGNMENT
+Write the Rates, the Fed and Funding section. This is the most important
+section in the note and the one an interviewer is most likely to probe. It
+should be the longest.
+
+Work through, explaining the mechanism at each step:
+- The shape of the curve, what changed today, and which end drove it
+- What the 2s10s and 3M10Y spreads mean and why anyone watches them
+- The funding stack: SOFR against IORB and EFFR, what the spread signals about
+  reserve scarcity, and what reverse repo balances add to that picture
+- The decomposition of the 10-year into real yield and breakeven, and which
+  component moved
+- Credit spreads as the risk-appetite gauge, and what they imply for the
+  leveraged finance and LBO market specifically
+- The curve-implied policy path, the next FOMC date, and any Fed commentary in
+  today's sources
+
+Be explicit that the implied easing path is derived from the Treasury curve
+rather than from fed funds futures, and that it will differ modestly from
+CME FedWatch. Say that in one clause, not a paragraph.
+
+Define every piece of jargon on first use. SOFR, IORB, OAS, breakeven, term
+premium: the reader needs to be able to explain these out loud, not just
+recognize them.
+
+{_JSON_RULES}
+
+SCHEMA
+{_STORY_SCHEMA % {"words": 520}}"""
+
+
+def _econ_prompt(fact_sheet: str, sources_text: str, calendar_text: str) -> str:
+    return f"""{fact_sheet}
+
+RELEVANT HEADLINES
+{sources_text}
+
+ECONOMIC CALENDAR (recent and upcoming, with consensus where available)
+{calendar_text}
+
+YOUR ASSIGNMENT
+Write the Economic Data section. Lead with whatever printed most recently.
+
+For each release that matters: actual against consensus against prior, any
+revision to the prior month, and the read-through for the Fed's reaction
+function. Then place it in the trend: is inflation converging on target or
+stalling, is the labor market cooling or cracking?
+
+{_JSON_RULES}
+
+SCHEMA
+{_STORY_SCHEMA % {"words": 230}}"""
+
+
+def _watch_prompt(fact_sheet: str, calendar_text: str, earnings_text: str, sources_text: str) -> str:
+    return f"""{fact_sheet}
+
+ECONOMIC CALENDAR
+{calendar_text}
+
+EARNINGS CALENDAR
+{earnings_text}
+
+RELEVANT HEADLINES
+{sources_text}
+
+YOUR ASSIGNMENT
+Identify the four or five most consequential catalysts in the next 24 to 72
+hours. Use the calendars above plus the FOMC date in the verified facts. Do not
+invent an event or a consensus figure that is not provided.
+
+{_JSON_RULES}
+
+SCHEMA
+{{
+  "headline": "one sentence framing what this stretch is really a test of",
+  "quiet_day": false,
+  "catalysts": [
+    {{
+      "what": "the event, named specifically",
+      "when": "day and time if known, otherwise the day",
+      "consensus": "the expected figure if provided in the inputs, otherwise 'no published consensus in today's data'",
+      "why": "one sentence on which market narrative this confirms or breaks",
+      "bull": "what a stronger-than-expected outcome would do and to what",
+      "bear": "what a weaker-than-expected outcome would do and to what"
+    }}
+  ],
+  "interview_question": "the forward-looking question an interviewer would ask about the week ahead",
+  "interview_answer": "3-5 spoken-word sentences naming the catalysts that matter and what you are watching for",
+  "source_ids": []
+}}"""
+
+
+_VERIFY_SYSTEM = """You are the fact checker on a markets desk. You receive a
+verified facts block and a draft section. Your only job is accuracy.
+
+Check every number, name, and claim in the draft against the verified facts and
+the source articles. Then return the corrected draft.
+
+Rules:
+- A figure that contradicts the verified facts must be corrected to the
+  verified value.
+- A figure that appears in neither the verified facts nor the source articles
+  must be removed, and the sentence rewritten so it still reads naturally
+  without it.
+- A company, deal, or event not present in the sources must be deleted entirely.
+- Do not improve the prose, change the angle, or add anything. If a passage is
+  accurate, return it byte-for-byte unchanged.
+- Keep the exact same JSON schema as the draft.
+
+Return the corrected JSON object plus a "corrections" array listing each change
+you made in a few words. Empty array if the draft was clean."""
+
+
 # ---------------------------------------------------------------------------
-# Robust JSON parsing
+# Synthesizer
 # ---------------------------------------------------------------------------
 
-def _parse_json_object(text: str) -> dict[str, Any]:
-    """
-    Extract and parse the first complete JSON object from an LLM response.
-
-    Tolerates two common LLM quirks:
-      - trailing prose after the closing brace ("Extra data" errors)
-      - literal newlines/tabs inside string values (strict-mode failures)
-    """
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-z]*\n?", "", text)
-        text = re.sub(r"\n?```$", "", text).strip()
-
-    start = text.find("{")
-    if start == -1:
-        raise ValueError("No JSON object found in response")
-
-    depth = 0
-    in_str = False
-    escape = False
-    end = len(text)
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_str = False
-        elif ch == '"':
-            in_str = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-
-    candidate = text[start:end]
-    # strict=False permits raw control characters (newlines, tabs) in strings.
-    return json.loads(candidate, strict=False)
-
-
-# ---------------------------------------------------------------------------
-# Retry policy
-# ---------------------------------------------------------------------------
-
-def _is_retryable(exc: BaseException) -> bool:
-    """Retry only on transient conditions — never on auth/bad-request/credit errors."""
-    if isinstance(exc, (anthropic.RateLimitError, anthropic.APITimeoutError,
-                        anthropic.APIConnectionError, anthropic.InternalServerError)):
-        return True
-    if isinstance(exc, anthropic.APIStatusError):
-        return exc.status_code in (500, 502, 503, 504, 529)
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Public interface
-# ---------------------------------------------------------------------------
-
-class AISynthesizer:
+class Synthesizer:
     def __init__(self) -> None:
-        self.client = anthropic.Anthropic(api_key=cfg.anthropic_api_key)
+        self.degraded: list[str] = []
+        self.verified_count = 0
+        self.correction_log: list[dict] = []
 
-    def synthesize(self, raw_data: dict[str, Any]) -> dict[str, Any]:
-        """
-        Run one Claude call per section. Returns a dict keyed by section name,
-        each containing {title, color, narrative, bullets}.
-        """
-        result: dict[str, Any] = {}
-        first_section = True
+    def synthesize(self, raw_data: dict[str, Any], engine: dict[str, Any]) -> dict[str, Any]:
+        fact_sheet = engine.get("fact_sheet", "")
+        grouped = raw_data.get("groups") or {}
+        plan = build_section_plan()
 
-        for section_key, section_cfg in SECTION_CONFIGS.items():
-            if not first_section and cfg.section_delay_sec > 0:
+        status = backend_status()
+        logger.info("Model backends available: %s", status)
+        if not any(status.values()):
+            logger.error(
+                "No model backend reachable. Shipping the deterministic edition."
+            )
+            return compile_data_edition(raw_data, engine, reason="no model backend available")
+
+        sections: dict[str, dict] = {}
+        calendar_text = _calendar_text(raw_data.get("economic_calendar") or [])
+        earnings_text = _earnings_text(raw_data.get("earnings_calendar") or [])
+
+        for index, section in enumerate(plan):
+            key = section["key"]
+            if index > 0 and cfg.section_delay_sec > 0:
                 time.sleep(cfg.section_delay_sec)
-            first_section = False
 
-            logger.info("Synthesizing section: %s", section_cfg["title"])
+            logger.info("Section %d/%d: %s", index + 1, len(plan), section["title"])
             try:
-                section_data = self._build_section_input(
-                    section_key, section_cfg, raw_data
+                sections[key] = self._build_section(
+                    section, raw_data, grouped, fact_sheet,
+                    calendar_text, earnings_text,
                 )
-                output = self._call_section(section_key, section_cfg, section_data)
-                if _should_verify(section_key):
-                    if cfg.section_delay_sec > 0:
-                        time.sleep(cfg.section_delay_sec)
-                    verified = self._verify_section(
-                        section_key, section_cfg, section_data, output
-                    )
-                    narrative = verified.get("narrative", output.get("narrative", ""))
-                    bullets = verified.get("bullets", output.get("bullets", []))
-                    bottom_line = verified.get(
-                        "bottom_line", output.get("bottom_line", "")
-                    )
-                else:
-                    narrative = output.get("narrative", "")
-                    bullets = output.get("bullets", [])
-                    bottom_line = output.get("bottom_line", "")
-
-                result[section_key] = {
-                    "title": section_cfg["title"],
-                    "color": section_cfg["color"],
-                    "bottom_line": bottom_line,
-                    "narrative": narrative,
-                    "bullets": bullets,
-                }
+            except ModelUnavailable as exc:
+                logger.error("  %s: no backend (%s). Using deterministic fallback.", key, exc)
+                self.degraded.append(key)
+                sections[key] = _fallback_section(section, grouped.get(key, []))
             except Exception as exc:
-                logger.error("Section %s failed: %s", section_key, exc)
-                result[section_key] = _fallback_section(
-                    section_key, section_cfg, raw_data, str(exc)
-                )
+                logger.error("  %s failed: %s", key, exc, exc_info=True)
+                self.degraded.append(key)
+                sections[key] = _fallback_section(section, grouped.get(key, []))
 
-        return result
+        sections["_meta"] = {
+            "degraded_sections": self.degraded,
+            "verified_count": self.verified_count,
+            "corrections": self.correction_log,
+            "backends": status,
+            "edition": "newsletter",
+        }
+        return sections
 
     # ------------------------------------------------------------------
-    # Input builder
-    # ------------------------------------------------------------------
 
-    def _build_section_input(
+    def _build_section(
         self,
-        section_key: str,
-        section_cfg: dict,
-        raw_data: dict[str, Any],
-    ) -> str:
-        parts: list[str] = []
-        now = datetime.now().strftime("%A, %B %d, %Y")
-        parts.append(f"DATE: {now}\nSECTION: {section_cfg['title']}\n")
+        section: dict,
+        raw_data: dict,
+        grouped: dict,
+        fact_sheet: str,
+        calendar_text: str,
+        earnings_text: str,
+    ) -> dict:
+        key = section["key"]
 
-        snap = raw_data.get("market_snapshot", {})
+        if key == "editor_note":
+            items = _top_headlines(grouped, limit=18)
+            sources_text, lookup = _format_sources(items, limit=18)
+            prompt = _editor_note_prompt(fact_sheet, sources_text)
+            data = self._call(section, prompt, fact_sheet, sources_text)
+            return _shape_editor_note(section, data, lookup)
 
-        # Full cross-asset market data for markets/macro and what_to_watch
-        if section_key in ("markets_macro", "what_to_watch"):
-            _append_primary_indices(parts, snap)
-            _append_sector_performance(parts, snap)
-            _append_yield_curve(parts, snap)
-            _append_fx(parts, snap)
-            _append_commodities(parts, snap)
-            _append_international(parts, snap)
-            _append_crypto(parts, snap)
-        elif section_key == "economic_data":
-            _append_primary_indices(parts, snap)
-            _append_yield_curve(parts, snap)
-        else:
-            # Brief market context for all other sections
-            _append_primary_indices(parts, snap)
+        if key == "market_wrap":
+            items = _top_headlines(grouped, limit=10, prefer=["fig", "tmt"])
+            sources_text, lookup = _format_sources(items, limit=10)
+            prompt = _market_wrap_prompt(fact_sheet, sources_text)
+            data = self._call(section, prompt, fact_sheet, sources_text)
+            return _shape_story(section, data, lookup)
 
-        # FRED macro data for economic and market sections
-        if section_key in ("economic_data", "markets_macro", "what_to_watch"):
-            macro = raw_data.get("macro_data", {})
-            if macro:
-                parts.append("FRED MACRO DATA (Federal Reserve — latest available readings):")
-                fred_labels = {
-                    "fed_funds_rate":     "Fed Funds Rate (%)",
-                    "cpi_yoy":            "CPI YoY (%)",
-                    "core_cpi":           "Core CPI YoY (%)",
-                    "core_pce":           "Core PCE YoY (%) — Fed's preferred measure",
-                    "unemployment":       "Unemployment Rate (%)",
-                    "gdp_growth":         "GDP (billions $)",
-                    "real_gdp_growth":    "Real GDP Growth QoQ Annualized (%)",
-                    "yield_spread_10y2y": "10Y-2Y Yield Spread (pp, FRED)",
-                    "mortgage_30y":       "30Y Mortgage Rate (%)",
-                    "ppi":                "PPI All Commodities",
-                    "industrial_prod":    "Industrial Production Index",
-                    "retail_sales":       "Retail Sales ex Food Svcs",
-                    "housing_starts":     "Housing Starts (thousands, ann.)",
-                }
-                for key, data in macro.items():
-                    if data.get("value") is not None:
-                        label = fred_labels.get(key, key)
-                        prev = data.get("prev_value")
-                        prev_str = f" | Prior: {prev}" if prev is not None else ""
-                        parts.append(
-                            f"  {label}: {data['value']} (as of {data.get('date','')}){prev_str}"
-                        )
-                parts.append("")
+        if key == "rates_fed":
+            items = _rate_relevant_headlines(raw_data)
+            sources_text, lookup = _format_sources(items, limit=10)
+            prompt = _rates_prompt(fact_sheet, sources_text)
+            data = self._call(section, prompt, fact_sheet, sources_text)
+            return _shape_story(section, data, lookup)
 
-        # Earnings calendar for corporate and forward-looking sections
-        if section_key in ("corporate_earnings", "what_to_watch"):
-            earnings = raw_data.get("earnings_calendar", [])
-            if earnings:
-                parts.append(f"UPCOMING EARNINGS ({len(earnings)} companies this week):")
-                for e in earnings[:20]:
-                    sym = e.get("symbol", "")
-                    date = e.get("date", "")
-                    eps = e.get("epsEstimate")
-                    rev = e.get("revenueEstimate")
-                    eps_str = f" | EPS est: ${eps:.2f}" if eps else ""
-                    rev_str = f" | Rev est: ${rev/1e9:.1f}B" if rev and rev > 1e8 else ""
-                    parts.append(f"  {sym} — {date}{eps_str}{rev_str}")
-                parts.append("")
+        if key == "econ_data":
+            items = _rate_relevant_headlines(raw_data)
+            sources_text, lookup = _format_sources(items, limit=8)
+            prompt = _econ_prompt(fact_sheet, sources_text, calendar_text)
+            data = self._call(section, prompt, fact_sheet, sources_text)
+            return _shape_story(section, data, lookup)
 
-        # Economic calendar
-        if section_key in ("economic_data", "what_to_watch"):
-            econ_cal = raw_data.get("economic_calendar", [])
-            if econ_cal:
-                parts.append(f"ECONOMIC CALENDAR ({len(econ_cal)} events):")
-                for e in econ_cal[:15]:
-                    event = e.get("event", "")
-                    impact = e.get("impact", "")
-                    actual = e.get("actual", "")
-                    estimate = e.get("estimate", "")
-                    prior = e.get("prev", "")
-                    parts.append(
-                        f"  {event} | Impact: {impact} | "
-                        f"Actual: {actual or 'pending'} | Est: {estimate or 'N/A'} | Prior: {prior or 'N/A'}"
-                    )
-                parts.append("")
+        if key == "what_to_watch":
+            items = _top_headlines(grouped, limit=6)
+            sources_text, lookup = _format_sources(items, limit=6)
+            prompt = _watch_prompt(fact_sheet, calendar_text, earnings_text, sources_text)
+            data = self._call(section, prompt, fact_sheet, sources_text)
+            return _shape_watch(section, data, lookup)
 
-        # SEC filings for corporate section
-        if section_key == "corporate_earnings":
-            filings = raw_data.get("sec_filings", [])
-            if filings:
-                parts.append(f"SEC 8-K FILINGS TODAY ({len(filings)}):")
-                for f in filings[:10]:
-                    parts.append(f"  {f.get('entity','')} — {f.get('form_type','')}")
-                parts.append("")
-
-        # Section-specific headlines
-        sections = raw_data.get("sections", {})
-        headlines = sections.get(section_key, [])
-
-        if section_key == "what_to_watch":
-            all_headlines = []
-            for s_headlines in sections.values():
-                all_headlines.extend(s_headlines[:5])
-            headlines = all_headlines[:35]
-
-        if headlines:
-            parts.append(f"HEADLINES ({len(headlines)} items):")
-            for i, item in enumerate(headlines[:25], 1):
-                src = item.get("source", "")
-                headline = item.get("headline", "")
-                summary = item.get("summary", "")
-                parts.append(f"{i}. [{src}] {headline}")
-                if summary:
-                    parts.append(f"   {summary[:300]}")
-            parts.append("")
-
-        if not headlines and section_key != "what_to_watch":
-            parts.append(
-                "NOTE: No specific headlines available for this section today. "
-                "Write based on general market context and note limited data availability."
-            )
-
-        return "\n".join(parts)
+        # Coverage and product groups
+        items = grouped.get(key, [])
+        sources_text, lookup = _format_sources(items, limit=12)
+        prompt = _story_prompt(section, sources_text, fact_sheet)
+        data = self._call(section, prompt, fact_sheet, sources_text)
+        return _shape_story(section, data, lookup)
 
     # ------------------------------------------------------------------
-    # API call
-    # ------------------------------------------------------------------
 
-    def _call_section(
-        self, section_key: str, section_cfg: dict, user_content: str
-    ) -> dict[str, Any]:
-        template = (
-            LIGHT_SECTION_SYSTEM_PROMPT
-            if cfg.briefing_mode == "light"
-            else SECTION_SYSTEM_PROMPT
-        )
-        system_prompt = template.format(
-            section_title=section_cfg["title"],
-            editorial_focus=section_cfg["editorial_focus"],
-        )
-        return self._generate(system_prompt, user_content, temperature=0.4)
-
-    def _verify_section(
-        self,
-        section_key: str,
-        section_cfg: dict,
-        source_input: str,
-        generated: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Fact-check generated content against source headlines. Falls back to original on error."""
-        try:
-            user_content = (
-                "SOURCE DATA (ground truth):\n"
-                + source_input
-                + "\n\nGENERATED CONTENT TO VERIFY:\n"
-                + json.dumps(generated, ensure_ascii=False)
-            )
-            verified = self._generate(
-                VERIFY_SYSTEM_PROMPT, user_content, temperature=0.1
-            )
-            logger.info("  Verified section: %s", section_cfg["title"])
-            return verified
-        except Exception as exc:
-            logger.warning("Verification failed for %s, using original: %s", section_key, exc)
-        return generated
-
-    @retry(
-        retry=retry_if_exception(_is_retryable),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=4, max=30),
-        reraise=True,
-    )
-    def _generate(
-        self, system_prompt: str, user_content: str, temperature: float = 0.4
-    ) -> dict[str, Any]:
-        # Prefilling the assistant turn with "{" forces JSON-only output.
-        response = self.client.messages.create(
-            model=cfg.claude_model,
+    def _call(self, section: dict, prompt: str, fact_sheet: str, sources_text: str) -> dict:
+        data = call_model_json(
+            _HOUSE_STYLE,
+            prompt,
             max_tokens=cfg.claude_max_tokens,
-            temperature=temperature,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_content},
-                {"role": "assistant", "content": "{"},
-            ],
+            label=section["key"],
         )
 
-        raw_text = "".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
-        if not raw_text:
-            raise RuntimeError("Claude returned no text")
+        if cfg.verify_sections:
+            data = self._verify(section, data, fact_sheet, sources_text)
 
-        # Re-attach the prefilled opening brace, then parse defensively.
-        if not raw_text.startswith("{"):
-            raw_text = "{" + raw_text
+        return data
 
-        result = _parse_json_object(raw_text)
+    def _verify(self, section: dict, draft: dict, fact_sheet: str, sources_text: str) -> dict:
+        import json as _json
 
-        bullets = result.get("bullets", [])
-        if isinstance(bullets, dict):
-            bullets = [bullets]
-        result["bullets"] = bullets
+        prompt = f"""{fact_sheet}
 
-        usage = getattr(response, "usage", None)
-        logger.info(
-            "  %s — %s tokens in / %s tokens out",
-            cfg.claude_model,
-            getattr(usage, "input_tokens", "?"),
-            getattr(usage, "output_tokens", "?"),
-        )
+SOURCE ARTICLES AVAILABLE TO THE WRITER
+{sources_text}
 
-        return result
+DRAFT SECTION TO CHECK
+{_json.dumps(draft, indent=2)}
 
-    # ------------------------------------------------------------------
-    # Digest insight — one short, data-grounded interpretation per section
-    # ------------------------------------------------------------------
+Return the corrected JSON object with the same keys, plus a "corrections" array."""
 
-    def generate_insight(
-        self, section_key: str, section_cfg: dict, raw_data: dict[str, Any]
-    ) -> str:
-        """A single sentence interpreting the section's data. '' on failure."""
         try:
-            user_content = self._build_section_input(
-                section_key, section_cfg, raw_data
+            checked = call_model_json(
+                _VERIFY_SYSTEM,
+                prompt,
+                max_tokens=cfg.claude_max_tokens,
+                label=f"{section['key']} verify",
             )
-            system_prompt = INSIGHT_SYSTEM_PROMPT.format(
-                section_title=section_cfg["title"]
-            )
-            return _clean_insight(self._generate_insight_text(system_prompt, user_content))
         except Exception as exc:
-            logger.warning("Digest insight failed for %s: %s", section_key, exc)
-            return ""
+            logger.warning("  %s verification failed (%s). Keeping the draft.", section["key"], exc)
+            return draft
 
-    @retry(
-        retry=retry_if_exception(_is_retryable),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=4, max=30),
-        reraise=True,
-    )
-    def _generate_insight_text(self, system_prompt: str, user_content: str) -> str:
-        response = self.client.messages.create(
-            model=cfg.claude_model,
-            max_tokens=cfg.insight_max_tokens,
-            temperature=0.3,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_content}],
-        )
-        text = "".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
-        usage = getattr(response, "usage", None)
-        logger.info(
-            "  insight (%s) — %s tokens in / %s tokens out",
-            cfg.claude_model,
-            getattr(usage, "input_tokens", "?"),
-            getattr(usage, "output_tokens", "?"),
-        )
-        return text
+        corrections = checked.pop("corrections", []) or []
+        if corrections:
+            logger.info("  %s: %d correction(s) applied.", section["key"], len(corrections))
+            self.correction_log.append({"section": section["key"], "items": corrections})
+
+        # A verifier that returns something structurally broken is not trusted.
+        if not isinstance(checked, dict) or not checked:
+            return draft
+        self.verified_count += 1
+        return checked
 
 
 # ---------------------------------------------------------------------------
-# Digest mode — zero Claude calls, headlines + data feeds only
+# Shaping model output into render-ready sections
 # ---------------------------------------------------------------------------
 
-_MA_KEYWORDS = (
-    "merger", "acquisition", "acquire", "acquires", "buyout", "m&a",
-    "takeover", "take-private", "deal", "lbo", "spinoff", "divest",
+def _base_section(section: dict) -> dict:
+    return {
+        "key": section["key"],
+        "title": section["title"],
+        "subtitle": section.get("subtitle", ""),
+        "kind": section.get("kind", "coverage"),
+        "accent": section.get("accent", "#334155"),
+        "short": section.get("short", ""),
+        "desk_note": section.get("desk_note", ""),
+    }
+
+
+def _paragraphs(text: Any) -> list[str]:
+    if not isinstance(text, str):
+        return []
+    normalized = text.replace("\r\n", "\n").strip()
+    if "\n\n" not in normalized and "\n" in normalized:
+        normalized = "\n\n".join(p.strip() for p in normalized.split("\n") if p.strip())
+    return [p.strip() for p in normalized.split("\n\n") if p.strip()]
+
+
+def _clean_numbers(raw: Any) -> list[dict]:
+    out = []
+    if isinstance(raw, list):
+        for item in raw[:6]:
+            if isinstance(item, dict) and item.get("label") and item.get("value"):
+                out.append({
+                    "label": str(item["label"])[:60],
+                    "value": str(item["value"])[:60],
+                })
+    return out
+
+
+def _shape_story(section: dict, data: dict, lookup: dict) -> dict:
+    out = _base_section(section)
+    out.update({
+        "headline": str(data.get("headline", "")).strip(),
+        "paragraphs": _paragraphs(data.get("narrative")),
+        "why_it_matters": str(data.get("why_it_matters", "")).strip(),
+        "interview_question": str(data.get("interview_question", "")).strip(),
+        "interview_answer": str(data.get("interview_answer", "")).strip(),
+        "numbers": _clean_numbers(data.get("numbers")),
+        "sources": _resolve_sources(data.get("source_ids"), lookup),
+        "quiet_day": bool(data.get("quiet_day")),
+        "catalysts": [],
+        "available": True,
+    })
+    return out
+
+
+def _shape_editor_note(section: dict, data: dict, lookup: dict) -> dict:
+    out = _base_section(section)
+    out.update({
+        "headline": str(data.get("headline", "")).strip(),
+        "paragraphs": _paragraphs(data.get("note")),
+        "one_thing": str(data.get("one_thing", "")).strip(),
+        "sources": _resolve_sources(data.get("source_ids"), lookup),
+        "interview_question": "",
+        "interview_answer": "",
+        "numbers": [],
+        "catalysts": [],
+        "quiet_day": False,
+        "available": True,
+    })
+    return out
+
+
+def _shape_watch(section: dict, data: dict, lookup: dict) -> dict:
+    catalysts = []
+    raw = data.get("catalysts")
+    if isinstance(raw, list):
+        for item in raw[:6]:
+            if not isinstance(item, dict) or not item.get("what"):
+                continue
+            catalysts.append({
+                "what": str(item.get("what", "")).strip(),
+                "when": str(item.get("when", "")).strip(),
+                "consensus": str(item.get("consensus", "")).strip(),
+                "why": str(item.get("why", "")).strip(),
+                "bull": str(item.get("bull", "")).strip(),
+                "bear": str(item.get("bear", "")).strip(),
+            })
+
+    out = _base_section(section)
+    out.update({
+        "headline": str(data.get("headline", "")).strip(),
+        "paragraphs": [],
+        "catalysts": catalysts,
+        "interview_question": str(data.get("interview_question", "")).strip(),
+        "interview_answer": str(data.get("interview_answer", "")).strip(),
+        "numbers": [],
+        "sources": _resolve_sources(data.get("source_ids"), lookup),
+        "quiet_day": not catalysts,
+        "available": True,
+    })
+    return out
+
+
+def _fallback_section(section: dict, items: list[dict]) -> dict:
+    """
+    Deterministic stand-in when a model call fails.
+
+    Ships real links rather than prose so the section is still usable and
+    visibly marked as unwritten.
+    """
+    out = _base_section(section)
+    sources = [
+        {
+            "title": i.get("headline", ""),
+            "url": i.get("url", ""),
+            "publisher": i.get("source_name") or i.get("source", ""),
+        }
+        for i in items[:5] if i.get("url")
+    ]
+    out.update({
+        "headline": (
+            items[0].get("headline", "") if items
+            else f"No {section['title']} narrative available this morning."
+        ),
+        "paragraphs": [
+            "Written analysis was unavailable for this desk this morning. The "
+            "headlines the desk pulled are linked below so the story can still "
+            "be picked up directly from the source."
+        ],
+        "why_it_matters": "",
+        "interview_question": "",
+        "interview_answer": "",
+        "numbers": [],
+        "catalysts": [],
+        "sources": sources,
+        "quiet_day": False,
+        "available": False,
+    })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Deterministic edition
+# ---------------------------------------------------------------------------
+
+def compile_data_edition(
+    raw_data: dict[str, Any], engine: dict[str, Any], reason: str = ""
+) -> dict[str, Any]:
+    """
+    Numbers-only edition.
+
+    Used in data mode and as the last-resort fallback. Every rate, spread and
+    index level is still present with its rule-based interpretation, because
+    all of that is computed rather than generated. Only the written stories are
+    missing.
+    """
+    sections: dict[str, dict] = {}
+    grouped = raw_data.get("groups") or {}
+
+    reads = [
+        ("market_wrap", "Market Wrap", "#0369A1", "MKT", engine.get("equity", {}).get("read", "")),
+        ("rates_fed", "Rates, the Fed & Funding", "#065F46", "RTS", " ".join(filter(None, [
+            engine.get("curve", {}).get("read", ""),
+            engine.get("funding", {}).get("read", ""),
+            engine.get("inflation", {}).get("read", ""),
+            engine.get("credit", {}).get("read", ""),
+            engine.get("policy", {}).get("read", ""),
+        ]))),
+        ("econ_data", "Economic Data", "#7C2D12", "ECO", engine.get("cross_asset", {}).get("read", "")),
+    ]
+
+    for key, title, accent, short, read in reads:
+        sections[key] = {
+            "key": key, "title": title, "subtitle": "", "kind": "lead",
+            "accent": accent, "short": short, "desk_note": "",
+            "headline": "", "paragraphs": _paragraphs(read),
+            "why_it_matters": "", "interview_question": "", "interview_answer": "",
+            "numbers": [], "catalysts": [], "sources": [],
+            "quiet_day": False, "available": bool(read),
+        }
+
+    for key in GROUP_ORDER:
+        if key in cfg.skip_groups or key == "what_to_watch":
+            continue
+        meta = ALL_GROUPS[key]
+        sections[key] = _fallback_section(
+            {
+                "key": key, "title": meta["title"],
+                "subtitle": meta.get("subtitle", ""),
+                "kind": meta.get("kind", "coverage"),
+                "accent": meta.get("accent", "#334155"),
+                "short": meta.get("short", ""),
+                "desk_note": meta.get("desk_note", ""),
+            },
+            grouped.get(key, []),
+        )
+
+    sections["_meta"] = {
+        "degraded_sections": list(sections.keys()),
+        "verified_count": 0,
+        "corrections": [],
+        "backends": backend_status(),
+        "edition": "data",
+        "reason": reason,
+    }
+    return sections
+
+
+# ---------------------------------------------------------------------------
+# Input helpers
+# ---------------------------------------------------------------------------
+
+def _top_headlines(grouped: dict, limit: int = 15, prefer: list[str] | None = None) -> list[dict]:
+    """Highest-confidence story from each group, best first, deduplicated."""
+    pool: list[dict] = []
+    seen: set[str] = set()
+
+    ordered_keys = (prefer or []) + [k for k in GROUP_ORDER if k not in (prefer or [])]
+
+    # Round-robin across desks so one noisy group cannot crowd out the rest.
+    for depth in range(3):
+        for key in ordered_keys:
+            items = grouped.get(key) or []
+            if depth < len(items):
+                item = items[depth]
+                fp = item.get("fingerprint", "")
+                if fp and fp not in seen:
+                    seen.add(fp)
+                    pool.append(item)
+    return pool[:limit]
+
+
+_RATE_TERMS = (
+    "fed", "fomc", "powell", "rate", "yield", "treasury", "inflation", "cpi",
+    "pce", "payroll", "jobless", "gdp", "sofr", "repo", "bond", "curve",
+    "basis point", "monetary", "central bank", "ecb", "boj",
 )
 
 
-def extract_ma_headlines(raw_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Pull M&A-focused headlines from Finnhub merger feed and keyword matches."""
-    seen: set[str] = set()
-    items: list[dict[str, Any]] = []
-    for section_headlines in raw_data.get("sections", {}).values():
-        for h in section_headlines:
-            fp = h.get("fingerprint") or h.get("headline", "")
-            if fp in seen:
-                continue
-            source = h.get("source", "").lower()
-            text = f"{h.get('headline', '')} {h.get('summary', '')}".lower()
-            if source == "finnhub:merger" or any(k in text for k in _MA_KEYWORDS):
-                seen.add(fp)
-                items.append(h)
-    return items[:15]
+def _rate_relevant_headlines(raw_data: dict) -> list[dict]:
+    out = []
+    for item in raw_data.get("all_headlines") or []:
+        text = (item.get("headline", "") + " " + item.get("summary", "")).lower()
+        if any(term in text for term in _RATE_TERMS):
+            out.append(item)
+    return out[:14]
 
 
-def compile_digest(raw_data: dict[str, Any]) -> dict[str, Any]:
-    """
-    Build all briefing sections from routed headlines — no full AI synthesis.
-    Uses Finnhub, RSS, and other feeds already collected in raw_data.
+def _calendar_text(events: list[dict]) -> str:
+    if not events:
+        return "(no economic calendar data available today)"
+    lines = []
+    for e in events[:14]:
+        parts = [
+            str(e.get("time", ""))[:16],
+            str(e.get("country", "")),
+            str(e.get("event", "")),
+        ]
+        for label, field in (("actual", "actual"), ("consensus", "estimate"), ("prior", "prev")):
+            value = e.get(field)
+            if value not in (None, ""):
+                parts.append(f"{label} {value}")
+        impact = e.get("impact")
+        if impact:
+            parts.append(f"impact {impact}")
+        lines.append("  " + " | ".join(p for p in parts if p))
+    return "\n".join(lines)
 
-    When DIGEST_INSIGHTS is enabled and an Anthropic key is present, each
-    section also gets one short Claude-generated insight interpreting that
-    section's data. Without a key, it degrades silently to a plain digest.
-    """
-    synthesizer = None
-    if cfg.digest_insights:
-        if cfg.anthropic_api_key:
+
+def _earnings_text(events: list[dict]) -> str:
+    if not events:
+        return "(no earnings calendar data available today)"
+    lines = []
+    for e in events[:16]:
+        symbol = e.get("symbol", "")
+        if not symbol:
+            continue
+        bits = [f"  {symbol}", str(e.get("date", ""))]
+        eps = e.get("epsEstimate")
+        rev = e.get("revenueEstimate")
+        if eps not in (None, ""):
+            bits.append(f"EPS est {eps}")
+        if rev not in (None, ""):
             try:
-                synthesizer = AISynthesizer()
-                logger.info("Digest insights enabled — adding one Claude insight per section.")
-            except Exception as exc:
-                logger.warning("Digest insights disabled — could not init Claude: %s", exc)
-        else:
-            logger.info(
-                "DIGEST_INSIGHTS is on but ANTHROPIC_API_KEY is missing — "
-                "compiling a plain digest without insights."
-            )
-
-    result: dict[str, Any] = {}
-    first = True
-    for section_key, section_cfg in SECTION_CONFIGS.items():
-        section = _digest_section(section_key, section_cfg, raw_data)
-        if synthesizer is not None:
-            if not first and cfg.section_delay_sec > 0:
-                time.sleep(cfg.section_delay_sec)
-            first = False
-            insight = synthesizer.generate_insight(section_key, section_cfg, raw_data)
-            if insight:
-                section["insight"] = insight
-        result[section_key] = section
-    return result
+                bits.append(f"rev est ${float(rev) / 1e9:.2f}B")
+            except (TypeError, ValueError):
+                pass
+        hour = e.get("hour")
+        if hour:
+            bits.append({"bmo": "before open", "amc": "after close"}.get(hour, str(hour)))
+        lines.append(" | ".join(bits))
+    return "\n".join(lines) if lines else "(no earnings calendar data available today)"
 
 
-def _digest_section(
-    section_key: str,
-    section_cfg: dict,
-    raw_data: dict[str, Any],
-) -> dict[str, Any]:
-    sections = raw_data.get("sections", {})
-    headlines = list(sections.get(section_key, []))
-
-    if section_key == "what_to_watch":
-        headlines = []
-        for items in sections.values():
-            headlines.extend(items[:3])
-        headlines = headlines[:12]
-
-    bullets = [
-        {
-            "label": item.get("headline", "Headline"),
-            "value": item.get("source", ""),
-            "note": (item.get("summary") or "")[:220],
-        }
-        for item in headlines[:8]
-    ]
-
-    if headlines:
-        lead = headlines[0]
-        lead_headline = lead.get("headline", "").rstrip(".")
-        lead_summary = (lead.get("summary") or "").strip()
-        bottom_line = lead_headline
-        parts = [f"Lead story: {lead_headline}."]
-        if lead_summary:
-            parts.append(lead_summary)
-        if len(headlines) > 1:
-            parts.append(
-                "Also today: "
-                + "; ".join(
-                    h.get("headline", "") for h in headlines[1:4] if h.get("headline")
-                )
-                + "."
-            )
-        narrative = " ".join(parts)
-    else:
-        narrative = "No major headlines in this area today."
-        bottom_line = "Quiet session for this coverage area."
-
-    return {
-        "title": section_cfg["title"],
-        "color": section_cfg["color"],
-        "bottom_line": bottom_line[:280],
-        "narrative": narrative[:1400],
-        "bullets": bullets,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _clean_insight(text: str) -> str:
-    """Strip preamble, labels, and wrapping quotes from a one-line insight."""
-    text = (text or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-z]*\n?", "", text)
-        text = re.sub(r"\n?```$", "", text).strip()
-    # Drop a leading "Insight:", "Market insight -", etc.
-    text = re.sub(r"^(market\s+)?(insight|analysis|takeaway)\s*[:\-–]\s*", "", text, flags=re.I)
-    text = text.strip().strip('"').strip()
-    return text[:400]
-
-
-def _should_verify(section_key: str) -> bool:
-    if not cfg.verify_sections:
-        return False
-    if cfg.verify_only_sections:
-        return section_key in cfg.verify_only_sections
-    return True
-
-
-def _fallback_section(
-    section_key: str,
-    section_cfg: dict,
-    raw_data: dict[str, Any],
-    error_msg: str,
-) -> dict[str, Any]:
-    """Compile a section from RSS headlines when Gemini is unavailable."""
-    sections = raw_data.get("sections", {})
-    headlines = list(sections.get(section_key, []))
-
-    if section_key == "what_to_watch":
-        headlines = []
-        for items in sections.values():
-            headlines.extend(items[:3])
-        headlines = headlines[:12]
-
-    bullets = [
-        {
-            "label": item.get("headline", "Headline"),
-            "value": item.get("source", ""),
-            "note": (item.get("summary") or "")[:220],
-        }
-        for item in headlines[:6]
-    ]
-
-    if headlines:
-        lead = headlines[0]
-        themes = "; ".join(
-            h.get("headline", "") for h in headlines[1:4] if h.get("headline")
-        )
-        narrative = (
-            "AI synthesis was unavailable for this section today, so the items "
-            "below are presented without full editorial analysis. The day's lead "
-            f"development concerned: {lead.get('headline', '').rstrip('.')}. "
-            f"{(lead.get('summary') or '').strip()}"
-        ).strip()
-        if themes:
-            narrative += (
-                "\n\nOther threads worth watching in this area today included: "
-                f"{themes}. Read these alongside the market data table above for "
-                "context until full analysis resumes."
-            )
-        bottom_line = (
-            "Automated analysis was unavailable for this section today; the items "
-            "below are raw source headlines rather than interpreted insight."
-        )
-    else:
-        narrative = (
-            "No section-specific headlines were available today, and automated "
-            f"analysis could not run (reason: {error_msg[:120]})."
-        )
-        bottom_line = (
-            "No data or analysis was available for this section in today's run."
-        )
-
-    return {
-        "title": section_cfg["title"],
-        "color": section_cfg["color"],
-        "bottom_line": bottom_line,
-        "narrative": narrative[:1400],
-        "bullets": bullets,
-    }
-
-
-def _fmt_value(value: float, fmt: str) -> str:
-    if fmt == "yield":
-        return f"{value:.2f}%"
-    elif fmt == "price":
-        return f"${value:,.2f}"
-    elif fmt == "crypto":
-        return f"${value:,.0f}"
-    elif fmt == "fx":
-        return f"{value:.4f}"
-    return f"{value:,.2f}"
-
-
-def _fmt_ticker_line(data: dict) -> str:
-    if data.get("value") is None:
-        return "N/A"
-    chg = data.get("change_pct")
-    chg_str = f"{chg:+.2f}%" if chg is not None else "N/A"
-    direction = data.get("direction", "")
-    return f"{_fmt_value(data['value'], data.get('format',''))} ({chg_str}) [{direction}]"
-
-
-def _append_primary_indices(parts: list, snap: dict) -> None:
-    primary = snap.get("primary", {})
-    if not primary:
-        return
-    parts.append("PRIMARY INDICES:")
-    for key, data in primary.items():
-        if data.get("value") is not None:
-            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
-    vix = primary.get("vix", {})
-    if vix.get("value") is not None:
-        level = vix["value"]
-        regime = "elevated fear" if level > 25 else "moderate caution" if level > 18 else "complacency/calm"
-        parts.append(f"  VIX regime note: {level:.1f} indicates {regime}")
-    parts.append("")
-
-
-def _append_sector_performance(parts: list, snap: dict) -> None:
-    sectors = snap.get("sectors", {})
-    if not sectors:
-        return
-    valid = [(k, v) for k, v in sectors.items() if v.get("change_pct") is not None]
-    if not valid:
-        return
-    ranked = sorted(valid, key=lambda x: x[1].get("change_pct", 0), reverse=True)
-    parts.append("S&P 500 SECTOR ETF PERFORMANCE (ranked best to worst):")
-    for key, data in ranked:
-        chg = data.get("change_pct", 0)
-        parts.append(f"  {data['label']} ({key.upper()}): {chg:+.2f}%")
-    if ranked:
-        best = ranked[0][1]
-        worst = ranked[-1][1]
-        spread = (best.get("change_pct", 0) or 0) - (worst.get("change_pct", 0) or 0)
-        parts.append(f"  Sector dispersion (leader-laggard spread): {spread:.2f}pp")
-    parts.append("")
-
-
-def _append_yield_curve(parts: list, snap: dict) -> None:
-    rates = snap.get("rates", {})
-    if not rates:
-        return
-    parts.append("YIELD CURVE & FIXED INCOME:")
-    order = ["treasury_2y", "treasury_5y", "treasury_10y", "treasury_30y"]
-    for key in order:
-        data = rates.get(key, {})
-        if data.get("value") is not None:
-            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
-    derived = snap.get("derived", {})
-    if derived:
-        spread_bps = derived.get("spread_2y10y_bps")
-        inverted = derived.get("yield_curve_inverted", False)
-        if spread_bps is not None:
-            status = "INVERTED (recession signal active)" if inverted else "normal (positive slope)"
-            parts.append(f"  2Y-10Y Spread: {spread_bps:+d}bps — curve is {status}")
-    parts.append("")
-
-
-def _append_fx(parts: list, snap: dict) -> None:
-    fx = snap.get("fx", {})
-    if not fx:
-        return
-    parts.append("FOREIGN EXCHANGE:")
-    for key, data in fx.items():
-        if data.get("value") is not None:
-            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
-    dxy = fx.get("dxy", {})
-    if dxy.get("value") is not None:
-        chg = dxy.get("change_pct", 0) or 0
-        direction = "strengthening (headwind for commodities and EM)" if chg > 0.1 else \
-                    "weakening (tailwind for commodities and EM)" if chg < -0.1 else "broadly flat"
-        parts.append(f"  DXY note: dollar {direction}")
-    parts.append("")
-
-
-def _append_commodities(parts: list, snap: dict) -> None:
-    commodities = snap.get("commodities", {})
-    if not commodities:
-        return
-    parts.append("COMMODITIES:")
-    for key, data in commodities.items():
-        if data.get("value") is not None:
-            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
-    parts.append("")
-
-
-def _append_international(parts: list, snap: dict) -> None:
-    intl = snap.get("international", {})
-    if not intl:
-        return
-    parts.append("INTERNATIONAL EQUITY INDICES:")
-    for key, data in intl.items():
-        if data.get("value") is not None:
-            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
-    parts.append("")
-
-
-def _append_crypto(parts: list, snap: dict) -> None:
-    crypto = snap.get("crypto", {})
-    if not crypto:
-        return
-    parts.append("CRYPTOCURRENCY:")
-    for key, data in crypto.items():
-        if data.get("value") is not None:
-            parts.append(f"  {data['label']}: {_fmt_ticker_line(data)}")
-    parts.append("")
+# Backwards-compatible alias for the previous entry point name.
+AISynthesizer = Synthesizer

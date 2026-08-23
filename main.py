@@ -1,18 +1,18 @@
 """
 Pipeline orchestrator.
 
-Runs the full briefing pipeline end-to-end:
   1. Aggregate news and market data
-  2. Synthesize with Gemini
-  3. Render HTML email
-  4. Deliver via SendGrid / SMTP
-  5. Log the result
+  2. Compute the deterministic market engine (every number in the issue)
+  3. Synthesize the written sections through Claude
+  4. Render the newsletter
+  5. Deliver and log
 
 Modes:
-  python main.py                  Full pipeline (aggregate → synthesize → render → send)
-  python main.py --prepare-only   Steps 1-3 only; saves rendered HTML to briefing_ready.html
-  python main.py --send-only      Reads briefing_ready.html and sends (no Gemini calls)
-  python main.py --dry-run        Steps 1-3, saves preview, no send
+  python main.py                  full pipeline
+  python main.py --dry-run        steps 1-4, writes briefing_preview.html, no send
+  python main.py --prepare-only   steps 1-4, writes briefing_ready.html for a later send
+  python main.py --send-only      sends the previously prepared briefing_ready.html
+  python main.py --data-only      deterministic edition, zero model calls
 """
 
 from __future__ import annotations
@@ -29,25 +29,27 @@ from config import get_config
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    format="%(asctime)s  %(levelname)-7s  %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("briefing.main")
 cfg = get_config()
 
-_ET = ZoneInfo("America/New_York")
-_READY_FILE = Path(__file__).resolve().parent / "briefing_ready.html"
+_ROOT = Path(__file__).resolve().parent
+_ET = ZoneInfo(cfg.timezone)
+_READY_FILE = _ROOT / "briefing_ready.html"
+_SUBJECT_FILE = _ROOT / "briefing_subject.txt"
+_PREVIEW_FILE = _ROOT / "briefing_preview.html"
 
 
 def _should_run_today() -> bool:
-    """False on weekends when WEEKDAYS_ONLY is enabled (evaluated in the configured TZ)."""
     if not cfg.weekdays_only:
         return True
-    return datetime.now(_ET).weekday() < 5  # Mon=0 .. Fri=4
+    return datetime.now(_ET).weekday() < 5
 
 
-def _skipped_log(mode: str) -> dict:
-    logger.info("Weekend — skipping %s (WEEKDAYS_ONLY enabled).", mode)
+def _skipped(mode: str) -> dict:
+    logger.info("Weekend. Skipping %s (WEEKDAYS_ONLY is on).", mode)
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "status": "skipped_weekend",
@@ -56,31 +58,46 @@ def _skipped_log(mode: str) -> dict:
 
 
 def run_pipeline(
+    *,
     dry_run: bool = False,
     prepare_only: bool = False,
     send_only: bool = False,
+    data_only: bool = False,
 ) -> dict:
-    """Execute the pipeline in the requested mode. Returns a run-log dict."""
-
     if send_only:
         return _send_saved()
 
     if not dry_run and not _should_run_today():
-        return _skipped_log("prepare" if prepare_only else "pipeline")
+        return _skipped("prepare" if prepare_only else "pipeline")
 
     run_log: dict = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "dry_run": dry_run,
         "prepare_only": prepare_only,
         "status": "started",
+        "edition": None,
         "sections_generated": [],
+        "degraded_sections": [],
+        "corrections": 0,
         "sources_used": [],
         "sources_failed": [],
         "delivery": None,
         "error": None,
     }
 
-    missing = _missing_for_mode(dry_run=dry_run, prepare_only=prepare_only)
+    if dry_run:
+        # A preview should always render, even with a half-configured .env, so
+        # missing data keys warn rather than block.
+        missing = []
+        for key in cfg.validate_for_prepare():
+            logger.warning(
+                "%s is not set. The sections that depend on it will be empty.", key
+            )
+    else:
+        missing = (
+            cfg.validate_for_prepare() if prepare_only
+            else cfg.validate_for_briefing()
+        )
     if missing:
         run_log["status"] = "config_error"
         run_log["error"] = f"Missing config: {', '.join(missing)}"
@@ -88,63 +105,69 @@ def run_pipeline(
         raise RuntimeError(run_log["error"])
 
     try:
-        # ---- Step 1: Aggregate ----
-        logger.info("Step 1/4 — Aggregating news and market data...")
+        # ---- 1. Aggregate ----
+        logger.info("Step 1/5  Aggregating sources...")
         from news_aggregator import NewsAggregator
         raw_data = NewsAggregator().collect_all()
         run_log["sources_used"] = raw_data.get("sources_used", [])
         run_log["sources_failed"] = raw_data.get("sources_failed", [])
-        logger.info(
-            "  %d sources used, %d failed.",
-            len(run_log["sources_used"]),
-            len(run_log["sources_failed"]),
-        )
 
-        # ---- Step 2: Synthesize or compile digest ----
-        if cfg.uses_claude():
-            logger.info("Step 2/4 — Synthesizing with Claude (%s)...", cfg.claude_model)
-            from ai_synthesizer import AISynthesizer
-            briefing = AISynthesizer().synthesize(raw_data)
+        # ---- 2. Deterministic engine ----
+        logger.info("Step 2/5  Computing the market engine...")
+        import market_engine
+        engine = market_engine.build(raw_data)
+
+        # ---- 3. Synthesize ----
+        if data_only or not cfg.uses_model():
+            logger.info("Step 3/5  Data edition requested. Skipping model calls.")
+            from ai_synthesizer import compile_data_edition
+            briefing = compile_data_edition(raw_data, engine, reason="data mode requested")
         else:
-            logger.info("Step 2/4 — Compiling digest from data feeds...")
-            from ai_synthesizer import compile_digest
-            briefing = compile_digest(raw_data)
-        run_log["sections_generated"] = [
-            k for k in briefing if k not in ("sources_used", "generation_notes")
-        ]
-        logger.info("  Sections generated: %s", ", ".join(run_log["sections_generated"]))
+            logger.info("Step 3/5  Writing sections...")
+            from ai_synthesizer import Synthesizer
+            briefing = Synthesizer().synthesize(raw_data, engine)
 
-        # ---- Step 3: Render ----
-        logger.info("Step 3/4 — Rendering HTML email template...")
-        from email_renderer import EmailRenderer
-        from ai_synthesizer import extract_ma_headlines
-        html = EmailRenderer().render(
-            market_snapshot=raw_data.get("market_snapshot", {}),
-            briefing=briefing,
-            macro_data=raw_data.get("macro_data", {}),
-            earnings_calendar=raw_data.get("earnings_calendar", []),
-            economic_calendar=raw_data.get("economic_calendar", []),
-            sec_filings=raw_data.get("sec_filings", []),
-            ma_headlines=extract_ma_headlines(raw_data),
+        meta = briefing.get("_meta", {})
+        run_log["edition"] = meta.get("edition")
+        run_log["degraded_sections"] = meta.get("degraded_sections", [])
+        run_log["corrections"] = sum(
+            len(c.get("items", [])) for c in meta.get("corrections", [])
         )
+        run_log["sections_generated"] = [k for k in briefing if k != "_meta"]
+        logger.info(
+            "  %d sections, %d degraded, %d corrections applied.",
+            len(run_log["sections_generated"]),
+            len(run_log["degraded_sections"]),
+            run_log["corrections"],
+        )
+
+        # ---- 4. Render ----
+        logger.info("Step 4/5  Rendering...")
+        from email_renderer import EmailRenderer
+        html, subject = EmailRenderer().render(
+            briefing=briefing, engine=engine, raw_data=raw_data
+        )
+        run_log["subject"] = subject
 
         if dry_run:
-            Path(__file__).resolve().parent.joinpath("briefing_preview.html").write_text(
-                html, encoding="utf-8"
-            )
+            _PREVIEW_FILE.write_text(html, encoding="utf-8")
             run_log["status"] = "dry_run_complete"
-            logger.info("Dry run complete. Preview saved to briefing_preview.html.")
+            logger.info("Dry run complete. Preview at %s", _PREVIEW_FILE.name)
+            logger.info("Subject would be: %s", subject)
+            _append_log(run_log)
             return run_log
 
         if prepare_only:
             _READY_FILE.write_text(html, encoding="utf-8")
+            _SUBJECT_FILE.write_text(subject, encoding="utf-8")
             run_log["status"] = "prepared"
-            logger.info("Prepare complete. Briefing saved to briefing_ready.html.")
+            logger.info("Prepared. Saved %s", _READY_FILE.name)
             _append_log(run_log)
             return run_log
 
-        # ---- Step 4: Send ----
-        run_log.update(_do_send(html))
+        # ---- 5. Send ----
+        logger.info("Step 5/5  Sending...")
+        run_log.update(_do_send(html, subject))
 
     except Exception as exc:
         logger.error("Pipeline failed: %s", exc, exc_info=True)
@@ -157,16 +180,9 @@ def run_pipeline(
     return run_log
 
 
-def _missing_for_mode(*, dry_run: bool, prepare_only: bool) -> list[str]:
-    if dry_run or prepare_only:
-        return cfg.validate_for_prepare()
-    return cfg.validate_for_briefing()
-
-
 def _send_saved() -> dict:
-    """Read the prepared HTML and send it. Used by --send-only."""
     if not _should_run_today():
-        return _skipped_log("send")
+        return _skipped("send")
 
     run_log: dict = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -181,10 +197,15 @@ def _send_saved() -> dict:
             raise RuntimeError(f"Missing config: {', '.join(missing)}")
         if not _READY_FILE.exists():
             raise FileNotFoundError(
-                "briefing_ready.html not found — run --prepare-only first."
+                f"{_READY_FILE.name} not found. Run --prepare-only first."
             )
         html = _READY_FILE.read_text(encoding="utf-8")
-        run_log.update(_do_send(html))
+        subject = (
+            _SUBJECT_FILE.read_text(encoding="utf-8").strip()
+            if _SUBJECT_FILE.exists()
+            else f"Morning Desk, {datetime.now(_ET).strftime('%b %d')}"
+        )
+        run_log.update(_do_send(html, subject))
     except Exception as exc:
         logger.error("Send failed: %s", exc, exc_info=True)
         run_log["status"] = "failed"
@@ -195,49 +216,38 @@ def _send_saved() -> dict:
     return run_log
 
 
-def _do_send(html: str) -> dict:
-    subject = f"Morning Briefing — {datetime.now(_ET).strftime('%A, %B %d, %Y')}"
-    logger.info("Step 4/4 — Sending email: '%s'...", subject)
+def _do_send(html: str, subject: str) -> dict:
     from email_sender import EmailSender
     delivery = EmailSender().send(html_content=html, subject=subject)
     if not delivery.get("success"):
-        raise RuntimeError(delivery.get("error", "Email delivery failed"))
-    logger.info("  Delivery result: %s", delivery)
+        raise RuntimeError(delivery.get("error", "email delivery failed"))
+    logger.info("Delivered: %s", delivery)
     return {"status": "success", "delivery": delivery}
 
-
-# ---------------------------------------------------------------------------
-# Log persistence
-# ---------------------------------------------------------------------------
 
 def _append_log(entry: dict) -> None:
     log_path = cfg.log_path
     logs: list = []
     if log_path.exists():
         try:
-            logs = json.loads(log_path.read_text(encoding="utf-8"))
-            if not isinstance(logs, list):
-                logs = []
+            loaded = json.loads(log_path.read_text(encoding="utf-8"))
+            logs = loaded if isinstance(loaded, list) else []
         except (json.JSONDecodeError, OSError):
             logs = []
     logs.append(entry)
-    if len(logs) > 180:
-        logs = logs[-180:]
-    log_path.write_text(json.dumps(logs, indent=2, default=str), encoding="utf-8")
+    log_path.write_text(json.dumps(logs[-180:], indent=2, default=str), encoding="utf-8")
 
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the morning briefing pipeline.")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Render but do not send. Saves briefing_preview.html.")
+                        help="Render to briefing_preview.html without sending.")
     parser.add_argument("--prepare-only", action="store_true",
-                        help="Aggregate, synthesize, and render. Save to briefing_ready.html.")
+                        help="Render to briefing_ready.html for a later --send-only.")
     parser.add_argument("--send-only", action="store_true",
                         help="Send the previously prepared briefing_ready.html.")
+    parser.add_argument("--data-only", action="store_true",
+                        help="Deterministic edition with zero model calls.")
     args = parser.parse_args()
 
     try:
@@ -245,6 +255,7 @@ if __name__ == "__main__":
             dry_run=args.dry_run,
             prepare_only=args.prepare_only,
             send_only=args.send_only,
+            data_only=args.data_only,
         )
         print(json.dumps(result, indent=2, default=str))
         sys.exit(0)
