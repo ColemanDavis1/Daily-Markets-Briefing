@@ -67,7 +67,7 @@ jobs:
           # No ANTHROPIC_API_KEY is passed, and LLM_ALLOW_API_FALLBACK stays
           # unset, so this job has no path to metered billing. If subscription
           # auth fails it ships the deterministic edition instead.
-          CLAUDE_MAX_TOKENS: "4096"
+          CLAUDE_MAX_TOKENS: "8192"
           BRIEFING_MODE: newsletter
           VERIFY_SECTIONS: "true"
           WEEKDAYS_ONLY: ${{ inputs.force_run && 'false' || 'true' }}

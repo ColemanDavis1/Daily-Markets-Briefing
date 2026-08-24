@@ -41,6 +41,32 @@ class ModelCallFailed(RuntimeError):
     """A backend was reachable but the call did not produce usable output."""
 
 
+class UsageLimitReached(ModelCallFailed):
+    """
+    The subscription's usage allowance is exhausted.
+
+    Distinct from a normal failure because retrying is pointless and every
+    further attempt wastes wall-clock time. The caller stops the run's
+    remaining generation as soon as this appears.
+    """
+
+
+_LIMIT_MARKERS = (
+    "hit your weekly limit",
+    "hit your usage limit",
+    "usage limit reached",
+    "weekly limit",
+    "rate limit",
+    "too many requests",
+    "quota",
+)
+
+
+def _is_limit_error(detail: str) -> bool:
+    lowered = (detail or "").lower()
+    return any(marker in lowered for marker in _LIMIT_MARKERS)
+
+
 # ---------------------------------------------------------------------------
 # JSON extraction
 # ---------------------------------------------------------------------------
@@ -163,13 +189,27 @@ def _call_cli(system_prompt: str, user_prompt: str, timeout: int) -> str:
             envelope = None
 
     if envelope is not None and envelope.get("is_error"):
-        detail = str(envelope.get("result") or envelope.get("error") or "")[:300]
+        # Pull whatever the envelope will give us. "no detail" responses are
+        # useless for debugging, so fall back to the diagnostic fields.
+        detail = str(envelope.get("result") or envelope.get("error") or "").strip()
+        if not detail:
+            diagnostics = {
+                k: envelope.get(k)
+                for k in ("subtype", "terminal_reason", "api_error_status",
+                          "stop_reason", "num_turns")
+                if envelope.get(k) not in (None, "")
+            }
+            detail = f"no message from CLI; diagnostics={diagnostics}"
+        detail = detail[:400]
+
+        if _is_limit_error(detail):
+            raise UsageLimitReached(detail)
         if "authenticate" in detail.lower() or "oauth" in detail.lower():
             raise ModelCallFailed(
                 f"{detail}. Re-authenticate the CLI with `claude login` locally, "
                 "or refresh CLAUDE_CODE_OAUTH_TOKEN with `claude setup-token`."
             )
-        raise ModelCallFailed(detail or "CLI reported an error with no detail")
+        raise ModelCallFailed(detail)
 
     if result.returncode != 0:
         raise ModelCallFailed(
@@ -180,17 +220,14 @@ def _call_cli(system_prompt: str, user_prompt: str, timeout: int) -> str:
         raise ModelCallFailed("CLI returned no output")
 
     if envelope is not None:
-        # The CLI reports what the call cost. On subscription auth this is 0,
-        # which is the signal to watch if you want to confirm a run never
-        # touched metered credits.
+        # Notional token cost the CLI computes from usage. It is reported
+        # regardless of whether the call was billed to a subscription or to
+        # metered credits, so it is useful for sizing a run but says nothing
+        # about which account paid. Billing path is determined by which
+        # credential authenticated, not by this number.
         cost = envelope.get("total_cost_usd")
-        if isinstance(cost, (int, float)):
-            logger.info("    CLI reported cost: $%.4f", cost)
-            if cost > 0:
-                logger.warning(
-                    "    Non-zero cost reported. This call was billed as API "
-                    "usage rather than against a subscription."
-                )
+        if isinstance(cost, (int, float)) and cost > 0:
+            logger.info("    Token usage for this call, notional: $%.4f", cost)
 
         for field in ("result", "text", "content", "response"):
             value = envelope.get(field)
@@ -291,6 +328,11 @@ def call_model(
                     label, backend, time.monotonic() - started, len(text),
                 )
                 return text
+            except UsageLimitReached as exc:
+                # Retrying cannot help and the allowance is shared across the
+                # whole run, so surface this immediately.
+                logger.error("  %s: usage limit reached (%s).", label, exc)
+                raise
             except subprocess.TimeoutExpired:
                 errors.append(f"{backend} attempt {attempt}: timeout after {timeout}s")
                 logger.warning("  %s timed out on %s (attempt %d).", label, backend, attempt)

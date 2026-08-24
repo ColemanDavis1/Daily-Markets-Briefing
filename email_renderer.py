@@ -149,6 +149,7 @@ def _build_context(
         "sources_used": ", ".join(_pretty_sources(raw_data.get("sources_used") or [])),
         "sources_failed_count": len(raw_data.get("sources_failed") or []),
         "edition_kind": meta.get("edition", "newsletter"),
+        "limit_hit": meta.get("limit_hit", ""),
         "degraded_sections": meta.get("degraded_sections", []),
         "verified_count": meta.get("verified_count", 0),
         "quiet_desks": quiet_desks,
@@ -171,7 +172,10 @@ def _subject_and_preheader(now: datetime, lead: dict | None, engine: dict) -> tu
 
     headline = ""
     one_thing = ""
-    if lead:
+    # Only trust the lead's own words if the lead was actually written. A
+    # degraded section's placeholder text once shipped as the subject line
+    # ("Morning Desk, Aug 22: No The Lead narrative available this morning").
+    if lead and lead.get("available"):
         headline = (lead.get("headline") or "").strip()
         one_thing = (lead.get("one_thing") or "").strip()
 
@@ -180,7 +184,28 @@ def _subject_and_preheader(now: datetime, lead: dict | None, engine: dict) -> tu
         trimmed = headline if len(headline) <= 68 else headline[:65].rsplit(" ", 1)[0] + "..."
         subject = f"Morning Desk, {date_bit}: {trimmed}"
     else:
-        subject = f"Morning Desk, {date_bit}"
+        # No written lead. Build the subject from computed figures so the inbox
+        # line still carries information.
+        curve = engine.get("curve", {})
+        sp = next(
+            (i for i in engine.get("equity", {}).get("indices", [])
+             if i.get("label") == "S&P 500"),
+            None,
+        )
+        bits = []
+        if sp:
+            bits.append(f"S&P {sp['display']} {sp['change_display']}")
+        ten_year = next(
+            (p for p in curve.get("points", []) if p.get("label") == "10Y"), None
+        )
+        if ten_year:
+            bits.append(f"10Y {ten_year['display']}")
+        if curve.get("spread_2s10s_bp") is not None:
+            bits.append(f"2s10s {curve['spread_2s10s_bp']}bp")
+        subject = (
+            f"Morning Desk, {date_bit}: " + ", ".join(bits) if bits
+            else f"Morning Desk, {date_bit}"
+        )
 
     preheader = one_thing or headline
     if not preheader:

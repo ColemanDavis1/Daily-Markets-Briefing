@@ -60,7 +60,7 @@ class Config:
         default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
     )
     claude_max_tokens: int = field(
-        default_factory=lambda: int(os.getenv("CLAUDE_MAX_TOKENS", "4096"))
+        default_factory=lambda: int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
     )
     llm_timeout_sec: int = field(
         default_factory=lambda: int(os.getenv("LLM_TIMEOUT_SEC", "300"))

@@ -97,6 +97,18 @@
     </td>
   </tr>
 
+  {% if limit_hit %}
+  <tr>
+    <td style="background-color:#FEF3C7; padding:12px 32px;" class="px">
+      <div class="sans small" style="color:#78350F;">
+        <strong>Partial issue.</strong> The daily model allowance ran out while writing,
+        so some desks below carry their source headlines instead of written analysis.
+        All figures and tables are unaffected.
+      </div>
+    </td>
+  </tr>
+  {% endif %}
+
   {% if edition_kind == 'data' %}
   <tr>
     <td style="background-color:#FEF3C7; padding:12px 32px;" class="px">

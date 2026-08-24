@@ -26,7 +26,11 @@ import logging
 import time
 from typing import Any
 
-from claude_client import ModelUnavailable, call_model_json, backend_status
+from claude_client import (
+    UsageLimitReached,
+    call_model_json,
+    backend_status,
+)
 from config import get_config
 from groups import ALL_GROUPS, COVERAGE_GROUPS, GROUP_ORDER, PRODUCT_GROUPS
 
@@ -154,248 +158,23 @@ def build_section_plan() -> list[dict]:
 # Source formatting
 # ---------------------------------------------------------------------------
 
-def _format_sources(items: list[dict], limit: int = 12) -> tuple[str, dict[str, dict]]:
-    """
-    Number the candidate stories so the model can cite them by id.
-
-    Returns the prompt text and a lookup used to resolve the ids the model
-    returns into real publisher names and URLs. Citations are therefore always
-    links to articles that actually exist in today's pull.
-    """
-    lookup: dict[str, dict] = {}
-    lines: list[str] = []
-
-    for i, item in enumerate(items[:limit], start=1):
-        sid = f"S{i}"
-        lookup[sid] = {
-            "title": item.get("headline", ""),
-            "url": item.get("url", ""),
-            "publisher": item.get("source_name") or item.get("source", ""),
-            "published": item.get("published", ""),
-        }
-        summary = (item.get("summary") or "").strip()
-        lines.append(
-            f"[{sid}] {item.get('headline', '')}"
-            + (f"\n      {summary[:400]}" if summary else "")
-            + f"\n      source: {lookup[sid]['publisher']}"
-        )
-
-    return ("\n".join(lines) if lines else "(no qualifying articles in today's pull)"), lookup
-
-
 def _resolve_sources(ids: Any, lookup: dict[str, dict]) -> list[dict]:
+    """
+    Turn the source ids the model cited into real publisher names and URLs.
+
+    Anything the model returns that is not in the lookup is dropped, so a
+    citation can never point at an article that was not in today's pull.
+    """
     out: list[dict] = []
     seen: set[str] = set()
     if not isinstance(ids, list):
         return out
     for raw in ids:
-        sid = str(raw).strip().upper()
-        entry = lookup.get(sid)
+        entry = lookup.get(str(raw).strip().upper())
         if entry and entry.get("url") and entry["url"] not in seen:
             seen.add(entry["url"])
             out.append(entry)
     return out
-
-
-# ---------------------------------------------------------------------------
-# Prompt builders
-# ---------------------------------------------------------------------------
-
-_STORY_SCHEMA = """{
-  "headline": "the story in one specific sentence, naming the actors and the number that matters",
-  "quiet_day": false,
-  "narrative": "%(words)d words, 2-3 paragraphs separated by \\n\\n. Mechanism first: what happened, why it happened, who it affects, what it implies next.",
-  "why_it_matters": "one sentence on the read-through beyond this single story",
-  "interview_question": "the question an interviewer would actually ask coming out of this story, phrased the way a banker would ask it",
-  "interview_answer": "3-5 sentences, written to be spoken out loud, that answer that question completely. Start with the direct answer, then the supporting numbers, then the implication. No preamble.",
-  "numbers": [{"label": "what it is", "value": "the figure with units"}],
-  "source_ids": ["S1", "S3"]
-}"""
-
-
-def _story_prompt(section: dict, sources_text: str, fact_sheet: str, extra: str = "") -> str:
-    words = section.get("words", 200)
-    quiet_clause = (
-        "\n\nIF THERE IS NO REAL STORY TODAY\n"
-        "Set \"quiet_day\": true, say in the first sentence that the desk was "
-        "quiet, and then spend the section on standing context: where this "
-        "group's activity, spreads, valuations or pipeline currently sit based "
-        "on the verified facts and whatever the sources do support. Do not "
-        "manufacture a story. A reader who is told the desk was quiet and given "
-        "real context is better served than one given filler."
-    )
-
-    return f"""{fact_sheet}
-
-TODAY'S CANDIDATE STORIES FOR THIS DESK
-{sources_text}
-
-YOUR ASSIGNMENT
-Write the {section['title']} section of today's note.
-
-EDITORIAL MANDATE
-{section.get('focus', '')}
-{extra}
-
-Select the single most consequential story from the candidates above and write
-about that one. Do not summarize the list. Cite the ids of every source you
-drew on in "source_ids".{quiet_clause}
-
-{_JSON_RULES}
-
-SCHEMA
-{_STORY_SCHEMA % {"words": words}}"""
-
-
-def _editor_note_prompt(fact_sheet: str, headlines_text: str) -> str:
-    return f"""{fact_sheet}
-
-TODAY'S MOST SIGNIFICANT HEADLINES ACROSS ALL DESKS
-{headlines_text}
-
-YOUR ASSIGNMENT
-Write the opening of today's note: the single most important thing a person
-walking into a markets conversation this morning needs to have in their head.
-
-Pick one thing. Not a list. It might be a data print, a policy signal, a move
-in the curve, or a landmark deal. Justify the choice implicitly by explaining
-why it dominates everything else on the page.
-
-{_JSON_RULES}
-
-SCHEMA
-{{
-  "headline": "a specific, declarative sentence naming the day's dominant story",
-  "note": "130 words, 1-2 paragraphs separated by \\n\\n, explaining what happened and why it outranks everything else today",
-  "one_thing": "a single sentence, under 30 words, that the reader could say out loud if asked 'what's going on in the markets?' Make it specific and quantified.",
-  "source_ids": ["S1"]
-}}"""
-
-
-def _market_wrap_prompt(fact_sheet: str, sources_text: str) -> str:
-    return f"""{fact_sheet}
-
-RELEVANT HEADLINES
-{sources_text}
-
-YOUR ASSIGNMENT
-Write the Market Wrap. The reader can see the price tables, so do not recite
-them. Explain the session.
-
-Cover, in whatever order the day justifies:
-- What actually drove the index moves, and whether the move was broad or narrow
-- What sector rotation says about risk appetite right now
-- Whether the cross-asset picture (rates, dollar, gold, copper, oil) confirms
-  or contradicts what equities did, and flag any divergence explicitly
-- What the overnight futures and the Asian and European sessions add
-- The VIX level in context, including what it implies for the issuance window
-
-Note for the reader that cash index levels are the prior session's close, since
-this note goes out before the US open.
-
-{_JSON_RULES}
-
-SCHEMA
-{_STORY_SCHEMA % {"words": 380}}"""
-
-
-def _rates_prompt(fact_sheet: str, sources_text: str) -> str:
-    return f"""{fact_sheet}
-
-RELEVANT HEADLINES
-{sources_text}
-
-YOUR ASSIGNMENT
-Write the Rates, the Fed and Funding section. This is the most important
-section in the note and the one an interviewer is most likely to probe. It
-should be the longest.
-
-Work through, explaining the mechanism at each step:
-- The shape of the curve, what changed today, and which end drove it
-- What the 2s10s and 3M10Y spreads mean and why anyone watches them
-- The funding stack: SOFR against IORB and EFFR, what the spread signals about
-  reserve scarcity, and what reverse repo balances add to that picture
-- The decomposition of the 10-year into real yield and breakeven, and which
-  component moved
-- Credit spreads as the risk-appetite gauge, and what they imply for the
-  leveraged finance and LBO market specifically
-- The curve-implied policy path, the next FOMC date, and any Fed commentary in
-  today's sources
-
-Be explicit that the implied easing path is derived from the Treasury curve
-rather than from fed funds futures, and that it will differ modestly from
-CME FedWatch. Say that in one clause, not a paragraph.
-
-Define every piece of jargon on first use. SOFR, IORB, OAS, breakeven, term
-premium: the reader needs to be able to explain these out loud, not just
-recognize them.
-
-{_JSON_RULES}
-
-SCHEMA
-{_STORY_SCHEMA % {"words": 520}}"""
-
-
-def _econ_prompt(fact_sheet: str, sources_text: str, calendar_text: str) -> str:
-    return f"""{fact_sheet}
-
-RELEVANT HEADLINES
-{sources_text}
-
-ECONOMIC CALENDAR (recent and upcoming, with consensus where available)
-{calendar_text}
-
-YOUR ASSIGNMENT
-Write the Economic Data section. Lead with whatever printed most recently.
-
-For each release that matters: actual against consensus against prior, any
-revision to the prior month, and the read-through for the Fed's reaction
-function. Then place it in the trend: is inflation converging on target or
-stalling, is the labor market cooling or cracking?
-
-{_JSON_RULES}
-
-SCHEMA
-{_STORY_SCHEMA % {"words": 230}}"""
-
-
-def _watch_prompt(fact_sheet: str, calendar_text: str, earnings_text: str, sources_text: str) -> str:
-    return f"""{fact_sheet}
-
-ECONOMIC CALENDAR
-{calendar_text}
-
-EARNINGS CALENDAR
-{earnings_text}
-
-RELEVANT HEADLINES
-{sources_text}
-
-YOUR ASSIGNMENT
-Identify the four or five most consequential catalysts in the next 24 to 72
-hours. Use the calendars above plus the FOMC date in the verified facts. Do not
-invent an event or a consensus figure that is not provided.
-
-{_JSON_RULES}
-
-SCHEMA
-{{
-  "headline": "one sentence framing what this stretch is really a test of",
-  "quiet_day": false,
-  "catalysts": [
-    {{
-      "what": "the event, named specifically",
-      "when": "day and time if known, otherwise the day",
-      "consensus": "the expected figure if provided in the inputs, otherwise 'no published consensus in today's data'",
-      "why": "one sentence on which market narrative this confirms or breaks",
-      "bull": "what a stronger-than-expected outcome would do and to what",
-      "bear": "what a weaker-than-expected outcome would do and to what"
-    }}
-  ],
-  "interview_question": "the forward-looking question an interviewer would ask about the week ahead",
-  "interview_answer": "3-5 spoken-word sentences naming the catalysts that matter and what you are watching for",
-  "source_ids": []
-}}"""
 
 
 _VERIFY_SYSTEM = """You are the fact checker on a markets desk. You receive a
@@ -420,6 +199,221 @@ you made in a few words. Empty array if the draft was clean."""
 
 
 # ---------------------------------------------------------------------------
+# Packs
+#
+# One model call per pack rather than per section. This is the difference
+# between a run that fits inside a Claude Pro allowance and one that does not:
+# 18 sections drafted and verified individually is 36 calls, which exhausted a
+# weekly limit mid-run on the first live test. Four packs, each covering
+# several sections, costs roughly a tenth of that.
+#
+# Batching also sends the verified fact sheet four times instead of thirty-six,
+# which is where most of the input tokens were going.
+# ---------------------------------------------------------------------------
+
+PACKS: list[dict] = [
+    {
+        "key": "lead",
+        "label": "The Desk",
+        "sections": ["editor_note", "market_wrap", "rates_fed", "econ_data"],
+        "include_calendar": True,
+    },
+    {
+        "key": "coverage",
+        "label": "Coverage Groups",
+        "sections": list(COVERAGE_GROUPS.keys()),
+        "include_calendar": False,
+    },
+    {
+        "key": "product",
+        "label": "Product Groups",
+        "sections": list(PRODUCT_GROUPS.keys()),
+        "include_calendar": False,
+    },
+    {
+        "key": "standing",
+        "label": "Forward Look",
+        "sections": ["geopolitical", "what_to_watch"],
+        "include_calendar": True,
+    },
+]
+
+# Per-section schema guidance for the two sections that are not plain stories.
+_SPECIAL_SCHEMAS: dict[str, str] = {
+    "editor_note": (
+        'Keys: "headline", "narrative" (the opening, 130 words), "one_thing" '
+        '(a single sentence under 30 words the reader could say out loud if '
+        'asked what is going on in the markets, specific and quantified), '
+        '"source_ids". No interview_question or interview_answer for this one.'
+    ),
+    "what_to_watch": (
+        'Keys: "headline", "catalysts" (an array of 4-5 objects, each with '
+        '"what", "when", "consensus", "why", "bull", "bear"), '
+        '"interview_question", "interview_answer", "source_ids". '
+        'No "narrative" for this one. If no consensus figure is provided in the '
+        'inputs, write "no published consensus in today\'s data" rather than '
+        'inventing one.'
+    ),
+}
+
+_STORY_KEYS = (
+    'Keys: "headline", "quiet_day" (boolean), "narrative" (paragraphs separated '
+    'by \\n\\n), "why_it_matters" (one sentence), "interview_question", '
+    '"interview_answer" (3-5 sentences written to be spoken out loud), '
+    '"numbers" (array of {"label","value"}), "source_ids".'
+)
+
+
+def _pack_prompt(
+    pack: dict,
+    plan_by_key: dict[str, dict],
+    grouped: dict,
+    raw_data: dict,
+    fact_sheet: str,
+    calendar_text: str,
+    earnings_text: str,
+) -> tuple[str, dict[str, dict], list[str]]:
+    """
+    Build one prompt covering every section in the pack.
+
+    Source ids are numbered once across the whole pack so the model has a
+    single lookup table and Python can resolve every citation to a real URL.
+    """
+    lookup: dict[str, dict] = {}
+    counter = 1
+    blocks: list[str] = []
+    included: list[str] = []
+
+    for key in pack["sections"]:
+        section = plan_by_key.get(key)
+        if not section:
+            continue
+        included.append(key)
+
+        # Pick the candidate pool this section should choose from.
+        if key == "editor_note":
+            items = _top_headlines(grouped, limit=14)
+        elif key in ("rates_fed", "econ_data"):
+            items = _rate_relevant_headlines(raw_data)[:8]
+        elif key == "market_wrap":
+            items = _top_headlines(grouped, limit=8, prefer=["fig", "tmt"])
+        elif key == "what_to_watch":
+            items = _top_headlines(grouped, limit=5)
+        else:
+            items = (grouped.get(key) or [])[:9]
+
+        source_lines: list[str] = []
+        for item in items:
+            sid = f"S{counter}"
+            counter += 1
+            lookup[sid] = {
+                "title": item.get("headline", ""),
+                "url": item.get("url", ""),
+                "publisher": item.get("source_name") or item.get("source", ""),
+                "published": item.get("published", ""),
+            }
+            summary = (item.get("summary") or "").strip()
+            source_lines.append(
+                f"  [{sid}] {item.get('headline', '')}"
+                + (f"\n        {summary[:280]}" if summary else "")
+                + f"\n        source: {lookup[sid]['publisher']}"
+            )
+
+        schema_note = _SPECIAL_SCHEMAS.get(key, _STORY_KEYS)
+        mandate = section.get("focus") or _LEAD_MANDATES.get(key, "")
+
+        blocks.append(
+            f"""
+=== SECTION "{key}" : {section['title']} ===
+Target length: about {section['words']} words.
+Mandate: {mandate}
+{schema_note}
+Candidate stories for this desk:
+{chr(10).join(source_lines) if source_lines else "  (none in today's pull)"}
+"""
+        )
+
+    calendars = ""
+    if pack.get("include_calendar"):
+        calendars = f"""
+ECONOMIC CALENDAR (release schedule; consensus only where shown)
+{calendar_text}
+
+EARNINGS CALENDAR
+{earnings_text}
+"""
+
+    prompt = f"""{fact_sheet}
+{calendars}
+YOUR ASSIGNMENT
+Write {len(included)} sections of today's note, listed below. Each section gets
+its own entry in the output. Write each one to its own mandate and length, and
+select the single most consequential story from that section's candidate list
+rather than summarizing the list.
+
+Cite the source ids you actually drew on, per section, in "source_ids".
+
+IF A DESK HAS NO REAL STORY TODAY
+Set "quiet_day": true for that section, say so in the first sentence, and spend
+the section on standing context: where that group's activity, spreads,
+valuations or pipeline currently sit based on the verified facts. Do not
+manufacture a story. An honest short section beats invented filler.
+{"".join(blocks)}
+{_JSON_RULES}
+
+SCHEMA
+{{
+  "sections": {{
+    "<section key exactly as given above>": {{ ...that section's keys... }}
+  }}
+}}
+Include an entry for every one of the {len(included)} sections: {", ".join(included)}."""
+
+    return prompt, lookup, included
+
+
+_LEAD_MANDATES: dict[str, str] = {
+    "editor_note": (
+        "The single most important thing a person walking into a markets "
+        "conversation this morning needs in their head. Pick one thing, not a "
+        "list, and make clear why it outranks everything else on the page."
+    ),
+    "market_wrap": (
+        "Explain the session rather than reciting the tables the reader can "
+        "already see. What drove the index moves, whether the move was broad or "
+        "narrow, what sector rotation says about risk appetite, whether the "
+        "cross-asset picture confirms or contradicts equities, what the "
+        "overnight futures and the Asian and European sessions add, and the VIX "
+        "in context including what it implies for the issuance window. Note "
+        "that cash index levels are the prior session's close, since this goes "
+        "out before the US open."
+    ),
+    "rates_fed": (
+        "The most important section in the note and the one an interviewer is "
+        "most likely to probe. Work through the shape of the curve and which "
+        "end moved; what 2s10s and 3M10Y mean and why anyone watches them; the "
+        "funding stack, SOFR against IORB and EFFR, what that spread signals "
+        "about reserve scarcity, and what reverse repo balances add; the "
+        "decomposition of the 10-year into real yield and breakeven and which "
+        "component moved; credit spreads as the risk-appetite gauge and what "
+        "they imply for leveraged finance and LBO math specifically; and the "
+        "curve-implied policy path with the next FOMC date. State in one clause "
+        "that the implied path is derived from the Treasury curve rather than "
+        "fed funds futures and will differ modestly from CME FedWatch. Define "
+        "SOFR, IORB, OAS, breakeven and term premium on first use: the reader "
+        "needs to explain these out loud, not just recognize them."
+    ),
+    "econ_data": (
+        "Lead with whatever printed most recently. For each release that "
+        "matters: actual against consensus against prior, any revision, and the "
+        "read-through for the Fed's reaction function. Then place it in the "
+        "trend: is inflation converging on target or stalling, is the labor "
+        "market cooling or cracking?"
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # Synthesizer
 # ---------------------------------------------------------------------------
 
@@ -428,43 +422,76 @@ class Synthesizer:
         self.degraded: list[str] = []
         self.verified_count = 0
         self.correction_log: list[dict] = []
+        self.limit_hit: str = ""
 
     def synthesize(self, raw_data: dict[str, Any], engine: dict[str, Any]) -> dict[str, Any]:
         fact_sheet = engine.get("fact_sheet", "")
         grouped = raw_data.get("groups") or {}
         plan = build_section_plan()
+        plan_by_key = {s["key"]: s for s in plan}
 
         status = backend_status()
         logger.info("Model backends available: %s", status)
         if not any(status.values()):
-            logger.error(
-                "No model backend reachable. Shipping the deterministic edition."
+            logger.error("No model backend reachable. Shipping the deterministic edition.")
+            return compile_data_edition(
+                raw_data, engine, reason="no model backend available"
             )
-            return compile_data_edition(raw_data, engine, reason="no model backend available")
 
-        sections: dict[str, dict] = {}
         calendar_text = _calendar_text(raw_data.get("economic_calendar") or [])
         earnings_text = _earnings_text(raw_data.get("earnings_calendar") or [])
 
-        for index, section in enumerate(plan):
-            key = section["key"]
+        sections: dict[str, dict] = {}
+
+        for index, pack in enumerate(PACKS):
+            pack_sections = [k for k in pack["sections"] if k in plan_by_key]
+            if not pack_sections:
+                continue
+
+            if self.limit_hit:
+                # The allowance is gone. Fill the rest deterministically rather
+                # than burning minutes on calls that cannot succeed.
+                for key in pack_sections:
+                    sections[key] = _fallback_section(
+                        plan_by_key[key], grouped.get(key, [])
+                    )
+                    self.degraded.append(key)
+                continue
+
             if index > 0 and cfg.section_delay_sec > 0:
                 time.sleep(cfg.section_delay_sec)
 
-            logger.info("Section %d/%d: %s", index + 1, len(plan), section["title"])
+            logger.info(
+                "Pack %d/%d: %s (%d sections)",
+                index + 1, len(PACKS), pack["label"], len(pack_sections),
+            )
             try:
-                sections[key] = self._build_section(
-                    section, raw_data, grouped, fact_sheet,
-                    calendar_text, earnings_text,
+                sections.update(
+                    self._build_pack(
+                        pack, plan_by_key, grouped, raw_data,
+                        fact_sheet, calendar_text, earnings_text,
+                    )
                 )
-            except ModelUnavailable as exc:
-                logger.error("  %s: no backend (%s). Using deterministic fallback.", key, exc)
-                self.degraded.append(key)
-                sections[key] = _fallback_section(section, grouped.get(key, []))
+            except UsageLimitReached as exc:
+                self.limit_hit = str(exc)
+                logger.error(
+                    "Usage limit reached during pack '%s'. Remaining sections "
+                    "will ship deterministically.", pack["key"],
+                )
+                for key in pack_sections:
+                    if key not in sections:
+                        sections[key] = _fallback_section(
+                            plan_by_key[key], grouped.get(key, [])
+                        )
+                        self.degraded.append(key)
             except Exception as exc:
-                logger.error("  %s failed: %s", key, exc, exc_info=True)
-                self.degraded.append(key)
-                sections[key] = _fallback_section(section, grouped.get(key, []))
+                logger.error("Pack '%s' failed: %s", pack["key"], exc, exc_info=True)
+                for key in pack_sections:
+                    if key not in sections:
+                        sections[key] = _fallback_section(
+                            plan_by_key[key], grouped.get(key, [])
+                        )
+                        self.degraded.append(key)
 
         sections["_meta"] = {
             "degraded_sections": self.degraded,
@@ -472,114 +499,120 @@ class Synthesizer:
             "corrections": self.correction_log,
             "backends": status,
             "edition": "newsletter",
+            "limit_hit": self.limit_hit,
+            "packs": len(PACKS),
         }
         return sections
 
     # ------------------------------------------------------------------
 
-    def _build_section(
+    def _build_pack(
         self,
-        section: dict,
-        raw_data: dict,
+        pack: dict,
+        plan_by_key: dict,
         grouped: dict,
+        raw_data: dict,
         fact_sheet: str,
         calendar_text: str,
         earnings_text: str,
-    ) -> dict:
-        key = section["key"]
+    ) -> dict[str, dict]:
+        prompt, lookup, included = _pack_prompt(
+            pack, plan_by_key, grouped, raw_data,
+            fact_sheet, calendar_text, earnings_text,
+        )
 
-        if key == "editor_note":
-            items = _top_headlines(grouped, limit=18)
-            sources_text, lookup = _format_sources(items, limit=18)
-            prompt = _editor_note_prompt(fact_sheet, sources_text)
-            data = self._call(section, prompt, fact_sheet, sources_text)
-            return _shape_editor_note(section, data, lookup)
-
-        if key == "market_wrap":
-            items = _top_headlines(grouped, limit=10, prefer=["fig", "tmt"])
-            sources_text, lookup = _format_sources(items, limit=10)
-            prompt = _market_wrap_prompt(fact_sheet, sources_text)
-            data = self._call(section, prompt, fact_sheet, sources_text)
-            return _shape_story(section, data, lookup)
-
-        if key == "rates_fed":
-            items = _rate_relevant_headlines(raw_data)
-            sources_text, lookup = _format_sources(items, limit=10)
-            prompt = _rates_prompt(fact_sheet, sources_text)
-            data = self._call(section, prompt, fact_sheet, sources_text)
-            return _shape_story(section, data, lookup)
-
-        if key == "econ_data":
-            items = _rate_relevant_headlines(raw_data)
-            sources_text, lookup = _format_sources(items, limit=8)
-            prompt = _econ_prompt(fact_sheet, sources_text, calendar_text)
-            data = self._call(section, prompt, fact_sheet, sources_text)
-            return _shape_story(section, data, lookup)
-
-        if key == "what_to_watch":
-            items = _top_headlines(grouped, limit=6)
-            sources_text, lookup = _format_sources(items, limit=6)
-            prompt = _watch_prompt(fact_sheet, calendar_text, earnings_text, sources_text)
-            data = self._call(section, prompt, fact_sheet, sources_text)
-            return _shape_watch(section, data, lookup)
-
-        # Coverage and product groups
-        items = grouped.get(key, [])
-        sources_text, lookup = _format_sources(items, limit=12)
-        prompt = _story_prompt(section, sources_text, fact_sheet)
-        data = self._call(section, prompt, fact_sheet, sources_text)
-        return _shape_story(section, data, lookup)
-
-    # ------------------------------------------------------------------
-
-    def _call(self, section: dict, prompt: str, fact_sheet: str, sources_text: str) -> dict:
         data = call_model_json(
-            _HOUSE_STYLE,
-            prompt,
+            _HOUSE_STYLE, prompt,
             max_tokens=cfg.claude_max_tokens,
-            label=section["key"],
+            label=f"pack:{pack['key']}",
         )
 
         if cfg.verify_sections:
-            data = self._verify(section, data, fact_sheet, sources_text)
+            data = self._verify_pack(pack, data, fact_sheet, prompt)
 
-        return data
+        payload = data.get("sections")
+        if not isinstance(payload, dict):
+            # Some responses return the sections at the top level.
+            payload = {k: v for k, v in data.items() if k in included}
 
-    def _verify(self, section: dict, draft: dict, fact_sheet: str, sources_text: str) -> dict:
+        out: dict[str, dict] = {}
+        for key in included:
+            section = plan_by_key[key]
+            entry = payload.get(key)
+            if not isinstance(entry, dict) or not entry:
+                logger.warning("  %s missing from pack output. Falling back.", key)
+                out[key] = _fallback_section(section, grouped.get(key, []))
+                self.degraded.append(key)
+                continue
+
+            if key == "editor_note":
+                # The pack schema calls the body "narrative"; the editor note
+                # shaper expects "note".
+                entry.setdefault("note", entry.get("narrative", ""))
+                out[key] = _shape_editor_note(section, entry, lookup)
+            elif key == "what_to_watch":
+                out[key] = _shape_watch(section, entry, lookup)
+            else:
+                out[key] = _shape_story(section, entry, lookup)
+
+        logger.info(
+            "  pack '%s': %d of %d sections written.",
+            pack["key"],
+            sum(1 for k in included if out.get(k, {}).get("available")),
+            len(included),
+        )
+        return out
+
+    def _verify_pack(self, pack: dict, draft: dict, fact_sheet: str, prompt: str) -> dict:
         import json as _json
 
-        prompt = f"""{fact_sheet}
+        # Reuse the pack prompt's source listing so the checker sees exactly
+        # what the writer had available.
+        sources_excerpt = prompt.split("YOUR ASSIGNMENT", 1)[-1][:12000]
 
-SOURCE ARTICLES AVAILABLE TO THE WRITER
-{sources_text}
+        verify_prompt = f"""{fact_sheet}
 
-DRAFT SECTION TO CHECK
-{_json.dumps(draft, indent=2)}
+WHAT THE WRITER WAS GIVEN
+{sources_excerpt}
 
-Return the corrected JSON object with the same keys, plus a "corrections" array."""
+DRAFT TO CHECK
+{_json.dumps(draft, indent=2)[:60000]}
+
+Return the corrected JSON object with the same structure, plus a "corrections"
+array listing each change you made in a few words."""
 
         try:
             checked = call_model_json(
-                _VERIFY_SYSTEM,
-                prompt,
+                _VERIFY_SYSTEM, verify_prompt,
                 max_tokens=cfg.claude_max_tokens,
-                label=f"{section['key']} verify",
+                label=f"pack:{pack['key']} verify",
             )
+        except UsageLimitReached:
+            logger.warning(
+                "  pack '%s': usage limit reached before verification. "
+                "Keeping the unverified draft.", pack["key"],
+            )
+            return draft
         except Exception as exc:
-            logger.warning("  %s verification failed (%s). Keeping the draft.", section["key"], exc)
+            logger.warning(
+                "  pack '%s' verification failed (%s). Keeping the draft.",
+                pack["key"], exc,
+            )
             return draft
 
         corrections = checked.pop("corrections", []) or []
         if corrections:
-            logger.info("  %s: %d correction(s) applied.", section["key"], len(corrections))
-            self.correction_log.append({"section": section["key"], "items": corrections})
+            logger.info(
+                "  pack '%s': %d correction(s) applied.", pack["key"], len(corrections)
+            )
+            self.correction_log.append(
+                {"section": pack["key"], "items": corrections}
+            )
 
-        # A verifier that returns something structurally broken is not trusted.
-        if not isinstance(checked, dict) or not checked:
+        if not isinstance(checked, dict) or not checked.get("sections"):
             return draft
         self.verified_count += 1
         return checked
-
 
 # ---------------------------------------------------------------------------
 # Shaping model output into render-ready sections
