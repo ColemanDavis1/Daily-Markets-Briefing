@@ -2,14 +2,19 @@ name: Prepare Briefing
 
 # Writes the newsletter and uploads it as an artifact for the send job.
 #
-# Runs at 6:40 AM ET on weekdays. GitHub cron is UTC only and does not observe
-# daylight saving, so both candidate UTC times fire and a guard step exits the
-# one that is not actually 6 AM in New York.
+# Targets 6:40 AM ET on weekdays. GitHub cron is UTC only and does not observe
+# daylight saving, so both candidate UTC times are registered and a gate job
+# decides which one is correct for the current offset.
+#
+# The gate compares github.event.schedule, the cron expression that actually
+# fired, against the current offset. It deliberately does not check the clock
+# hour: GitHub routinely starts scheduled runs 10 to 40 minutes late, and an
+# hour-equality check rejects those legitimate runs.
 
 on:
   schedule:
-    - cron: '40 10 * * 1-5'   # 6:40 ET during EDT
-    - cron: '40 11 * * 1-5'   # 6:40 ET during EST
+    - cron: '40 10 * * 1-5'   # 6:40 ET while New York is on EDT (UTC-4)
+    - cron: '40 11 * * 1-5'   # 6:40 ET while New York is on EST (UTC-5)
   workflow_dispatch:
     inputs:
       force_run:
@@ -24,19 +29,46 @@ permissions:
   actions: write
 
 jobs:
-  prepare:
+  # A separate job so the off-season cron shows as a clean skip rather than a
+  # red failure.
+  gate:
     runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
     steps:
-      - name: Skip the duplicate DST run
-        if: github.event_name == 'schedule'
+      - id: check
+        name: Is this the right cron for the current DST offset?
         run: |
-          ET_HOUR=$(TZ=America/New_York date +%H)
-          echo "Current New York hour: $ET_HOUR"
-          if [ "$ET_HOUR" != "06" ]; then
-            echo "Not 6 AM in New York. This is the off-season cron. Exiting."
-            exit 1
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Manual or dispatch trigger. Proceeding."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
+          OFFSET=$(TZ=America/New_York date +%z)
+          if [ "$OFFSET" = "-0400" ]; then
+            EXPECTED='40 10 * * 1-5'
+          else
+            EXPECTED='40 11 * * 1-5'
+          fi
+
+          ACTUAL='${{ github.event.schedule }}'
+          echo "New York offset: $OFFSET"
+          echo "Expected cron:   $EXPECTED"
+          echo "Triggering cron: $ACTUAL"
+
+          if [ "$ACTUAL" = "$EXPECTED" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Off-season cron for the current offset. Skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  prepare:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
@@ -77,6 +109,11 @@ jobs:
           TIMEZONE: America/New_York
         run: python main.py --prepare-only
 
+      # Stamps the build date into the artifact so the send job can refuse a
+      # stale one rather than mailing out yesterday's issue.
+      - name: Stamp the build date
+        run: TZ=America/New_York date +%Y-%m-%d > briefing_date.txt
+
       - name: Upload briefing
         uses: actions/upload-artifact@v4
         with:
@@ -84,5 +121,6 @@ jobs:
           path: |
             briefing_ready.html
             briefing_subject.txt
+            briefing_date.txt
           retention-days: 2
           if-no-files-found: warn
