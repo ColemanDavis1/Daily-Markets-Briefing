@@ -2,9 +2,11 @@ name: Prepare Briefing
 
 # Writes the newsletter and uploads it as an artifact for the send job.
 #
-# Targets 6:40 AM ET on weekdays. GitHub cron is UTC only and does not observe
-# daylight saving, so both candidate UTC times are registered and a gate job
-# decides which one is correct for the current offset.
+# Targets 7:30 AM ET on weekdays, half an hour ahead of the 8:00 send.
+#
+# GitHub cron is UTC only and does not observe daylight saving, so both
+# candidate UTC times are registered and a gate job decides which one is
+# correct for the current offset.
 #
 # The gate compares github.event.schedule, the cron expression that actually
 # fired, against the current offset. It deliberately does not check the clock
@@ -13,8 +15,8 @@ name: Prepare Briefing
 
 on:
   schedule:
-    - cron: '40 10 * * 1-5'   # 6:40 ET while New York is on EDT (UTC-4)
-    - cron: '40 11 * * 1-5'   # 6:40 ET while New York is on EST (UTC-5)
+    - cron: '30 11 * * 1-5'   # 7:30 ET while New York is on EDT (UTC-4)
+    - cron: '30 12 * * 1-5'   # 7:30 ET while New York is on EST (UTC-5)
   workflow_dispatch:
     inputs:
       force_run:
@@ -47,9 +49,9 @@ jobs:
 
           OFFSET=$(TZ=America/New_York date +%z)
           if [ "$OFFSET" = "-0400" ]; then
-            EXPECTED='40 10 * * 1-5'
+            EXPECTED='30 11 * * 1-5'
           else
-            EXPECTED='40 11 * * 1-5'
+            EXPECTED='30 12 * * 1-5'
           fi
 
           ACTUAL='${{ github.event.schedule }}'
