@@ -2,14 +2,22 @@ name: Morning Briefing
 
 # Sends the newsletter prepared by prepare.yml.
 #
-# Targets 7:00 AM ET on weekdays. Both DST candidate crons are registered and
-# the gate job picks the correct one for the current offset. See prepare.yml for
-# why the gate matches on the cron expression rather than the clock hour.
+# Delivers at 8:00 AM ET on weekdays.
+#
+# GitHub's scheduler is best-effort and has started this workflow anywhere from
+# on time to ten hours late, so the cron alone cannot hold a consistent hour.
+# Three things compensate:
+#
+#   1. The cron is set for 7:50 ET and the job holds until 8:00 sharp, so an
+#      on-time or early start delivers exactly on the hour.
+#   2. A repository_dispatch from an external scheduler can trigger the same
+#      workflow at a precise time, which is far more reliable than GitHub cron.
+#   3. A send marker prevents a duplicate email when both of those fire.
 
 on:
   schedule:
-    - cron: '0 11 * * 1-5'   # 7:00 ET while New York is on EDT (UTC-4)
-    - cron: '0 12 * * 1-5'   # 7:00 ET while New York is on EST (UTC-5)
+    - cron: '50 11 * * 1-5'   # 7:50 ET while New York is on EDT (UTC-4)
+    - cron: '50 12 * * 1-5'   # 7:50 ET while New York is on EST (UTC-5)
   workflow_dispatch:
     inputs:
       force_run:
@@ -21,7 +29,7 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write   # the send marker is stored as an artifact
 
 jobs:
   gate:
@@ -29,9 +37,32 @@ jobs:
     outputs:
       run: ${{ steps.check.outputs.run }}
     steps:
+      # The external dispatcher and the GitHub cron can both fire on the same
+      # morning. Whichever gets there first leaves a dated marker artifact, and
+      # the other one stops here rather than sending a second copy.
+      - id: duplicate
+        name: Has today's issue already gone out?
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TODAY=$(TZ=America/New_York date +%Y-%m-%d)
+          FOUND=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100"             --jq "[.artifacts[] | select(.expired == false) | select(.name == \"sent-$TODAY\")] | length"             2>/dev/null || echo 0)
+          echo "Marker sent-$TODAY found: $FOUND"
+          if [ "${FOUND:-0}" -gt 0 ]; then
+            echo "already_sent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_sent=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: check
         name: Is this the right cron for the current DST offset?
         run: |
+          if [ "${{ steps.duplicate.outputs.already_sent }}" = "true" ]; then
+            echo "Today's issue has already been delivered. Skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [ "${{ github.event_name }}" != "schedule" ]; then
             echo "Manual or dispatch trigger. Proceeding."
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -40,9 +71,9 @@ jobs:
 
           OFFSET=$(TZ=America/New_York date +%z)
           if [ "$OFFSET" = "-0400" ]; then
-            EXPECTED='0 11 * * 1-5'
+            EXPECTED='50 11 * * 1-5'
           else
-            EXPECTED='0 12 * * 1-5'
+            EXPECTED='50 12 * * 1-5'
           fi
 
           ACTUAL='${{ github.event.schedule }}'
@@ -72,6 +103,21 @@ jobs:
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+
+      # Land on the hour. A run that starts early waits; a run that is already
+      # late proceeds immediately rather than waiting until tomorrow.
+      - name: Hold until 8:00 AM ET
+        run: |
+          TARGET=$(TZ=America/New_York date -d 'today 08:00' +%s)
+          NOW=$(date +%s)
+          WAIT=$(( TARGET - NOW ))
+          if [ "$WAIT" -gt 0 ] && [ "$WAIT" -le 1800 ]; then
+            echo "Holding ${WAIT}s to deliver at 8:00 AM ET."
+            sleep "$WAIT"
+          else
+            echo "No hold needed (offset ${WAIT}s from 8:00 ET)."
+          fi
+          echo "Sending at $(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')."
 
       # Only today's artifact is acceptable. Without this date check the step
       # downloads the newest successful prepare from any previous day and mails
@@ -163,3 +209,20 @@ jobs:
           rm -f briefing_ready.html briefing_subject.txt briefing_date.txt
           npm install -g @anthropic-ai/claude-code
           python main.py
+
+      # Marks the day as delivered so a later trigger does not send a second
+      # copy. Written only when one of the two send paths actually ran.
+      - id: today
+        if: success() && (steps.download.outcome == 'success' || steps.download.outcome == 'failure')
+        run: |
+          echo "date=$(TZ=America/New_York date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          TZ=America/New_York date +%Y-%m-%d > sent-marker.txt
+
+      - name: Record that today's issue was delivered
+        if: success() && steps.today.outputs.date != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: sent-${{ steps.today.outputs.date }}
+          path: sent-marker.txt
+          retention-days: 2
+          if-no-files-found: warn
