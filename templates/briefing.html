@@ -527,7 +527,7 @@
             </div>
             <div class="serif" style="font-size:17px; line-height:24px; color:#FFFFFF; padding-top:4px;">
               {% if policy.cuts_priced_12m >= 0.15 or policy.cuts_priced_12m <= -0.15 %}
-              {{ '%.1f' | format(policy.cuts_priced_12m | abs) }} &times; 25bp &middot; {{ policy.terminal_easing_12m_bp | abs }}bp
+              {{ policy.terminal_easing_12m_bp | abs }}bp &middot; about {{ '%.1f' | format(policy.cuts_priced_12m | abs) }} moves
               {% else %}
               No change priced
               {% endif %}
