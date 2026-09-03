@@ -16,8 +16,14 @@ name: Morning Briefing
 
 on:
   schedule:
-    - cron: '50 11 * * 1-5'   # 7:50 ET while New York is on EDT (UTC-4)
-    - cron: '50 12 * * 1-5'   # 7:50 ET while New York is on EST (UTC-5)
+    # Several attempts, all ahead of 8:00 ET. Each holds until 8:00 sharp,
+    # and the send marker means only the first one through mails anything.
+    - cron: '20 11 * * 1-5'   # 7:20 ET on EDT
+    - cron: '35 11 * * 1-5'   # 7:35 ET on EDT
+    - cron: '50 11 * * 1-5'   # 7:50 ET on EDT
+    - cron: '20 12 * * 1-5'   # 7:20 ET on EST
+    - cron: '35 12 * * 1-5'   # 7:35 ET on EST
+    - cron: '50 12 * * 1-5'   # 7:50 ET on EST
   workflow_dispatch:
     inputs:
       force_run:
@@ -69,19 +75,22 @@ jobs:
             exit 0
           fi
 
+          # Every cron here targets the same ET hour and only the UTC hour
+          # differs by season, so match on the hour rather than the minute.
           OFFSET=$(TZ=America/New_York date +%z)
           if [ "$OFFSET" = "-0400" ]; then
-            EXPECTED='50 11 * * 1-5'
+            EXPECTED_HOUR=11
           else
-            EXPECTED='50 12 * * 1-5'
+            EXPECTED_HOUR=12
           fi
 
           ACTUAL='${{ github.event.schedule }}'
-          echo "New York offset: $OFFSET"
-          echo "Expected cron:   $EXPECTED"
-          echo "Triggering cron: $ACTUAL"
+          ACTUAL_HOUR=$(echo "$ACTUAL" | awk '{print $2}')
+          echo "New York offset:   $OFFSET"
+          echo "Expected UTC hour: $EXPECTED_HOUR"
+          echo "Triggering cron:   $ACTUAL (hour $ACTUAL_HOUR)"
 
-          if [ "$ACTUAL" = "$EXPECTED" ]; then
+          if [ "$ACTUAL_HOUR" = "$EXPECTED_HOUR" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "Off-season cron for the current offset. Skipping."
@@ -111,7 +120,7 @@ jobs:
           TARGET=$(TZ=America/New_York date -d 'today 08:00' +%s)
           NOW=$(date +%s)
           WAIT=$(( TARGET - NOW ))
-          if [ "$WAIT" -gt 0 ] && [ "$WAIT" -le 1800 ]; then
+          if [ "$WAIT" -gt 0 ] && [ "$WAIT" -le 3000 ]; then
             echo "Holding ${WAIT}s to deliver at 8:00 AM ET."
             sleep "$WAIT"
           else
