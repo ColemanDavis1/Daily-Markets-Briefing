@@ -15,8 +15,14 @@ name: Prepare Briefing
 
 on:
   schedule:
-    - cron: '30 11 * * 1-5'   # 7:30 ET while New York is on EDT (UTC-4)
-    - cron: '30 12 * * 1-5'   # 7:30 ET while New York is on EST (UTC-5)
+    # Three attempts, because the GitHub scheduler drops and delays runs.
+    # The first to succeed leaves a marker and the rest stand down.
+    - cron: '0 11 * * 1-5'    # 7:00 ET on EDT
+    - cron: '15 11 * * 1-5'   # 7:15 ET on EDT
+    - cron: '30 11 * * 1-5'   # 7:30 ET on EDT
+    - cron: '0 12 * * 1-5'    # 7:00 ET on EST
+    - cron: '15 12 * * 1-5'   # 7:15 ET on EST
+    - cron: '30 12 * * 1-5'   # 7:30 ET on EST
   workflow_dispatch:
     inputs:
       force_run:
@@ -38,28 +44,56 @@ jobs:
     outputs:
       run: ${{ steps.check.outputs.run }}
     steps:
-      - id: check
-        name: Is this the right cron for the current DST offset?
+      # One prepare per day. Without this the redundant crons would each write
+      # a full issue and burn three times the model allowance.
+      - id: duplicate
+        name: Has today's issue already been written?
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          TODAY=$(TZ=America/New_York date +%Y-%m-%d)
+          FOUND=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq "[.artifacts[] | select(.expired == false) | select(.name == \"prepared-$TODAY\")] | length" \
+            2>/dev/null || echo 0)
+          echo "Marker prepared-$TODAY found: ${FOUND:-0}"
+          if [ "${FOUND:-0}" -gt 0 ]; then
+            echo "already_done=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_done=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: check
+        name: Should this trigger run?
+        run: |
+          if [ "${{ steps.duplicate.outputs.already_done }}" = "true" ]; then
+            echo "Today's issue is already written. Skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [ "${{ github.event_name }}" != "schedule" ]; then
             echo "Manual or dispatch trigger. Proceeding."
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # Every cron here targets the same ET hour and only the UTC hour
+          # differs by season, so match on the hour. That lets all the
+          # redundant attempts qualify during their own season.
           OFFSET=$(TZ=America/New_York date +%z)
           if [ "$OFFSET" = "-0400" ]; then
-            EXPECTED='30 11 * * 1-5'
+            EXPECTED_HOUR=11
           else
-            EXPECTED='30 12 * * 1-5'
+            EXPECTED_HOUR=12
           fi
 
           ACTUAL='${{ github.event.schedule }}'
-          echo "New York offset: $OFFSET"
-          echo "Expected cron:   $EXPECTED"
-          echo "Triggering cron: $ACTUAL"
+          ACTUAL_HOUR=$(echo "$ACTUAL" | awk '{print $2}')
+          echo "New York offset:   $OFFSET"
+          echo "Expected UTC hour: $EXPECTED_HOUR"
+          echo "Triggering cron:   $ACTUAL (hour $ACTUAL_HOUR)"
 
-          if [ "$ACTUAL" = "$EXPECTED" ]; then
+          if [ "$ACTUAL_HOUR" = "$EXPECTED_HOUR" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "Off-season cron for the current offset. Skipping."
@@ -115,6 +149,20 @@ jobs:
       # stale one rather than mailing out yesterday's issue.
       - name: Stamp the build date
         run: TZ=America/New_York date +%Y-%m-%d > briefing_date.txt
+
+      - id: today
+        name: Date the run
+        run: |
+          echo "date=$(TZ=America/New_York date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          cp briefing_date.txt prepared-marker.txt
+
+      - name: Mark today as written
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-${{ steps.today.outputs.date }}
+          path: prepared-marker.txt
+          retention-days: 2
+          if-no-files-found: warn
 
       - name: Upload briefing
         uses: actions/upload-artifact@v4
