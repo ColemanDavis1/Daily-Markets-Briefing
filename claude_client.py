@@ -150,7 +150,18 @@ def _call_cli(system_prompt: str, user_prompt: str, timeout: int) -> str:
         executable,
         "-p",
         "--output-format", "json",
-        "--max-turns", "1",
+        # No tools. This is a writing task, and with tools available the CLI
+        # would reach for them, hit the turn limit mid-call, and return an
+        # error carrying no text ("error_max_turns" with stop_reason
+        # "tool_use"), which is what silently emptied whole packs.
+        #
+        # Disabling them also enforces the accuracy rule: the model cannot
+        # search or read anything, so it can only use the fact sheet and the
+        # source articles in the prompt.
+        "--tools", "",
+        # Headroom above the single turn a toolless generation needs, so a
+        # stray internal step cannot truncate the response.
+        "--max-turns", "3",
         "--append-system-prompt", system_prompt,
     ]
     if cfg.claude_cli_model:
