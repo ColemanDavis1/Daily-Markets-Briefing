@@ -201,6 +201,77 @@ care whether your laptop is open.
 | `SMTP_PASSWORD` or `SENDGRID_API_KEY` | Delivery. |
 | `ANTHROPIC_API_KEY` | Not needed. Only used if you deliberately set `LLM_ALLOW_API_FALLBACK=true`. |
 
+## How prices are made accurate
+
+Getting index levels right turned out to be the subtlest part of the project,
+because the data sources are fine and the arithmetic is where it goes wrong.
+
+**Bars are read by date, never by value.** Yahoo's `meta.previousClose` is
+consistently null and `meta.chartPreviousClose` is the close *before* the
+requested range, so pairing it with `regularMarketPrice` reports a multi-week
+move as a daily change. An earlier fix compared the live price to the last bar
+by value to pick a baseline, which still broke twice a day: after the close it
+could pair a live price against the very session it came from, and pre-market a
+placeholder bar carrying the prior close could be compared against itself and
+print 0.00%.
+
+The rule now:
+
+| Asset class | What it reports |
+|---|---|
+| Cash indices, sector ETFs, international | Last **completed** session's close against the session before it |
+| Futures, FX, commodities, crypto | Live print against the last completed close |
+
+A bar dated today only counts as completed after 16:15 ET, so a partial
+mid-session bar is never mistaken for a close.
+
+**Headline indices are cross-checked.** Before rendering, the S&P 500,
+NASDAQ 100, Dow and VIX are compared against FRED's official daily close
+series, matched on the specific session date. A disagreement above 0.05% is
+logged and FRED wins, because FRED is the authoritative publisher and Yahoo is
+a convenience. The log line for each index states whether it verified.
+
+**Implausible moves are suppressed, not published.** A session move beyond a
+per-asset-class bound (12% for an index, 6% for FX, 40% for crypto) is treated
+as a data artifact: the level is kept and the change is dropped, because a
+missing number is recoverable in an interview and a wrong one is not.
+
+## Scheduling reality
+
+GitHub's scheduler is best-effort and, on this repository, genuinely
+unreliable. Observed behaviour: a cron firing ten hours late, another three to
+four hours late, and a weekday where it never fired at all.
+
+The design compensates rather than pretending otherwise:
+
+- **Three attempts per season.** Prepare tries 7:00, 7:15 and 7:30 ET; send
+  tries 7:20, 7:35 and 7:50 ET.
+- **The send job holds until 8:00 ET.** An early or on-time start waits and
+  delivers on the hour; a late start proceeds immediately.
+- **Dated marker artifacts make it idempotent.** `prepared-YYYY-MM-DD` stops
+  the later prepare crons from rewriting the issue and burning three times the
+  model allowance. `sent-YYYY-MM-DD` stops a second email.
+
+### The external dispatcher
+
+Something outside this repository sends a `repository_dispatch` every day at
+13:30 and 13:45 UTC, to the second. It is far more reliable than GitHub cron
+and has been the trigger that actually delivered most issues.
+
+If you want delivery pinned to 8:00 AM ET, retime that scheduler:
+
+| Dispatch type | Set to (UTC) | Eastern |
+|---|---|---|
+| `trigger-prepare` | 11:30 | 7:30 AM |
+| `trigger-send` | 12:00 | 8:00 AM |
+
+If the service supports timezone-aware scheduling, set it to 7:30 and 8:00
+`America/New_York` instead and it will handle the November DST change on its
+own. Otherwise both need a one-hour shift when New York moves to EST.
+
+The marker artifacts mean the dispatcher and the crons can safely overlap: only
+the first trigger through does the work.
+
 ## Degradation
 
 Nothing in the pipeline is allowed to block the morning.
