@@ -28,6 +28,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import feedparser
 import requests
@@ -230,6 +231,20 @@ TICKER_GROUPS: dict[str, dict[str, tuple[str, str, str, str]]] = {
 
 MARKET_TICKERS = {k: v for g in TICKER_GROUPS.values() for k, v in g.items()}
 
+# Markets that trade overnight, where the live print is the story. Everything
+# else reports the last completed session's close, which is what a pre-market
+# send should be quoting.
+_LIVE_PRICE_GROUPS = {"futures", "fx", "commodities", "crypto"}
+
+# Headline indices verified against FRED's official daily close series before
+# they reach the email. FRED wins any disagreement.
+_INDEX_CROSSCHECK: dict[str, str] = {
+    "sp500": "SP500",
+    "nasdaq": "NASDAQ100",
+    "dow": "DJIA",
+    "vix": "VIXCLS",
+}
+
 # ---------------------------------------------------------------------------
 # Aggregator
 # ---------------------------------------------------------------------------
@@ -331,11 +346,15 @@ class NewsAggregator:
 
         for group_name, tickers in TICKER_GROUPS.items():
             snapshot[group_name] = {}
+            # Overnight and 24-hour markets report their live print. Cash
+            # equity markets report the last completed session's close, which
+            # is what a pre-market send should quote.
+            live = group_name in _LIVE_PRICE_GROUPS
 
             for key, (stooq_sym, yahoo_sym, label, fmt) in tickers.items():
                 # Yahoo is primary. Stooq began returning an HTML block page
                 # instead of CSV for every symbol, so it is a fallback only.
-                data = self._fetch_yahoo_quote(yahoo_sym, label, fmt)
+                data = self._fetch_yahoo_quote(yahoo_sym, label, fmt, live=live)
                 if data is None:
                     data = self._fetch_stooq_quote(stooq_sym, label, fmt, d1, d2)
 
@@ -351,7 +370,88 @@ class NewsAggregator:
 
         if any_success:
             sources_used.append("market_data")
+
+        self._crosscheck_indices(snapshot, sources_failed)
         return snapshot
+
+    def _crosscheck_indices(self, snapshot: dict, sources_failed: list) -> None:
+        """
+        Verify the headline index levels against FRED's official daily closes.
+
+        Yahoo and FRED are independent publishers of the same closes, so a
+        disagreement means one of them is wrong or stale. FRED is the
+        authoritative series, so it wins, and the substitution is logged. This
+        is the check that catches a bad index print before it reaches the
+        email and, from there, an interview.
+        """
+        if not cfg.fred_api_key:
+            return
+
+        base = "https://api.stlouisfed.org/fred/series/observations"
+        for key, series_id in _INDEX_CROSSCHECK.items():
+            quote = (snapshot.get("primary") or {}).get(key) or {}
+            value = quote.get("value")
+            if value is None:
+                continue
+
+            try:
+                resp = self.session.get(
+                    base,
+                    params={
+                        "series_id": series_id,
+                        "api_key": cfg.fred_api_key,
+                        "file_type": "json",
+                        "limit": 3,
+                        "sort_order": "desc",
+                    },
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                obs = [
+                    (o["date"], float(o["value"]))
+                    for o in resp.json().get("observations", [])
+                    if o.get("value") not in (".", "", None)
+                ]
+            except Exception as exc:
+                logger.debug("FRED cross-check failed for %s: %s", series_id, exc)
+                continue
+
+            if not obs:
+                continue
+
+            bar_date = quote.get("bar_date")
+            match = next((v for d, v in obs if d == bar_date), None)
+            if match is None:
+                # FRED has not published that session yet. Not an error.
+                logger.debug(
+                    "%s: FRED has no observation for %s yet.", quote.get("label"), bar_date
+                )
+                continue
+
+            drift = abs(match - value) / match * 100 if match else 0.0
+            if drift > 0.05:
+                logger.warning(
+                    "%s disagrees with FRED for %s: Yahoo %.2f vs FRED %.2f "
+                    "(%.3f%%). Using FRED.",
+                    quote.get("label"), bar_date, value, match, drift,
+                )
+                sources_failed.append(f"crosscheck:{key}")
+                prior = next((v for d, v in obs if d < bar_date), None)
+                corrected = _quote_dict(
+                    quote.get("label", key),
+                    quote.get("format", "index"),
+                    match,
+                    prior if prior is not None else quote.get("prev_close") or match,
+                    bar_date,
+                )
+                corrected["bar_date"] = bar_date
+                corrected["source"] = "FRED"
+                snapshot["primary"][key] = corrected
+            else:
+                logger.info(
+                    "%s verified against FRED for %s (%.2f).",
+                    quote.get("label"), bar_date, value,
+                )
 
     def _fetch_stooq_quote(
         self, symbol: str, label: str, fmt: str, d1: str, d2: str
@@ -373,20 +473,34 @@ class NewsAggregator:
             logger.debug("Stooq failed for %s: %s", symbol, exc)
             return None
 
-    def _fetch_yahoo_quote(self, symbol: str, label: str, fmt: str) -> dict | None:
+    def _fetch_yahoo_quote(
+        self, symbol: str, label: str, fmt: str, *, live: bool = False
+    ) -> dict | None:
         """
-        Current price and the correct prior close from Yahoo's chart endpoint.
+        A quote and its correct prior close, derived from dated daily bars.
 
-        The prior close has to be derived from the close series rather than
-        taken from metadata. meta.previousClose is consistently null, and
-        meta.chartPreviousClose is the close immediately BEFORE the requested
-        range, so pairing it with regularMarketPrice yields a multi-week move
-        masquerading as a daily change.
+        Bar dates are the whole game here. Yahoo's metadata cannot be trusted
+        for a baseline: meta.previousClose is consistently null, and
+        meta.chartPreviousClose is the close BEFORE the requested range, so
+        pairing it with regularMarketPrice reports a multi-week move as a daily
+        change. An earlier version compared regularMarketPrice to the last bar
+        by value to decide which baseline to use, which broke in two ways:
+        after the close it could pair a live price against the same session it
+        came from, and pre-market a stale partial bar could be compared against
+        itself and report 0.00%.
 
-        So: regularMarketPrice is the current print. If the last bar in the
-        series is that same print, the prior close is the bar before it;
-        otherwise the last bar is itself the prior close and the live price is
-        a newer session not yet in the array.
+        So the series is read by date instead:
+
+        live=False (cash indices, sector ETFs, international)
+            Report the last COMPLETED session's close against the one before
+            it. Any bar dated today is dropped, because during the session it
+            is a partial bar and pre-market it is often a placeholder carrying
+            the prior close. This is what the newsletter labels "prior session
+            close", and it is stable no matter when the run happens.
+
+        live=True (futures, FX, commodities, crypto)
+            These trade overnight, so the current print is the story. Report
+            regularMarketPrice against the last completed session's close.
         """
         try:
             resp = self.session.get(
@@ -397,36 +511,73 @@ class NewsAggregator:
             resp.raise_for_status()
             result = resp.json()["chart"]["result"][0]
             meta = result.get("meta") or {}
-            closes = [
-                float(v) for v in result["indicators"]["quote"][0]["close"]
-                if v is not None
-            ]
-            if not closes:
+
+            stamps = result.get("timestamp") or []
+            raw_closes = result["indicators"]["quote"][0]["close"]
+
+            # Pair each close with the exchange-local date of its bar.
+            tz_name = meta.get("exchangeTimezoneName") or "America/New_York"
+            try:
+                bar_tz = ZoneInfo(tz_name)
+            except Exception:
+                bar_tz = ZoneInfo("America/New_York")
+
+            bars: list[tuple[str, float]] = []
+            for stamp, close in zip(stamps, raw_closes):
+                if close is None:
+                    continue
+                bar_date = datetime.fromtimestamp(stamp, tz=timezone.utc).astimezone(
+                    bar_tz
+                ).strftime("%Y-%m-%d")
+                bars.append((bar_date, float(close)))
+
+            if not bars:
                 return None
 
-            live = meta.get("regularMarketPrice")
-            if live is None:
-                if len(closes) < 2:
-                    return None
-                current, prev_close = closes[-1], closes[-2]
-            else:
-                current = float(live)
-                same_bar = abs(closes[-1] - current) <= max(abs(current) * 1e-6, 1e-9)
-                if same_bar:
-                    if len(closes) < 2:
+            now_local = datetime.now(bar_tz)
+            today_local = now_local.strftime("%Y-%m-%d")
+
+            # Today's bar only counts once the session has actually ended.
+            # Before then it is partial (mid-session) or a placeholder carrying
+            # the prior close (pre-market). The 16:15 cutoff gives the 16:00
+            # close time a margin for late prints.
+            session_over = (now_local.hour, now_local.minute) >= (16, 15)
+            completed = [
+                b for b in bars
+                if b[0] < today_local or (session_over and b[0] == today_local)
+            ]
+
+            if live:
+                current = meta.get("regularMarketPrice")
+                if current is None:
+                    if len(bars) < 2:
                         return None
-                    prev_close = closes[-2]
+                    current, baseline = bars[-1][1], bars[-2][1]
+                    as_of_date = bars[-1][0]
                 else:
-                    prev_close = closes[-1]
+                    current = float(current)
+                    if not completed:
+                        if len(bars) < 2:
+                            return None
+                        baseline = bars[-2][1]
+                    else:
+                        baseline = completed[-1][1]
+                    as_of_date = today_local
+            else:
+                # Prior session close against the session before it.
+                if len(completed) >= 2:
+                    as_of_date, current = completed[-1]
+                    baseline = completed[-2][1]
+                elif len(bars) >= 2:
+                    # Only today's bar is available (rare, e.g. a new listing).
+                    as_of_date, current = bars[-1]
+                    baseline = bars[-2][1]
+                else:
+                    return None
 
-            as_of = ""
-            ts = meta.get("regularMarketTime")
-            if ts:
-                as_of = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(
-                    "%Y-%m-%d %H:%M UTC"
-                )
-
-            return _quote_dict(label, fmt, current, prev_close, as_of)
+            quote = _quote_dict(label, fmt, current, baseline, as_of_date)
+            quote["bar_date"] = as_of_date
+            return quote
         except Exception as exc:
             logger.debug("Yahoo failed for %s: %s", symbol, exc)
             return None
