@@ -18,12 +18,14 @@ on:
   schedule:
     # Several attempts, all ahead of 8:00 ET. Each holds until 8:00 sharp,
     # and the send marker means only the first one through mails anything.
-    - cron: '20 11 * * 1-5'   # 7:20 ET on EDT
+    # Each attempt sits far enough after the prepare window that the artifact
+    # is normally ready, which avoids a needless second full write.
     - cron: '35 11 * * 1-5'   # 7:35 ET on EDT
-    - cron: '50 11 * * 1-5'   # 7:50 ET on EDT
-    - cron: '20 12 * * 1-5'   # 7:20 ET on EST
+    - cron: '45 11 * * 1-5'   # 7:45 ET on EDT
+    - cron: '55 11 * * 1-5'   # 7:55 ET on EDT
     - cron: '35 12 * * 1-5'   # 7:35 ET on EST
-    - cron: '50 12 * * 1-5'   # 7:50 ET on EST
+    - cron: '45 12 * * 1-5'   # 7:45 ET on EST
+    - cron: '55 12 * * 1-5'   # 7:55 ET on EST
   workflow_dispatch:
     inputs:
       force_run:

@@ -1078,14 +1078,19 @@ def build_key_numbers(snapshot: dict, macro: dict, curve: dict, policy: dict, cr
         add("Next FOMC", policy["next_fomc"], f"{policy.get('days_to_fomc')} days out")
     # Sign matters here: a negative easing figure means the curve is pricing
     # tightening, and calling that "-2.9 cuts" would be actively misleading.
+    # Lead with the basis-point figure, not the implied count of moves. The
+    # bp number rests only on the observed gap between the effective funds
+    # rate and the 1-year yield; converting it to a number of quarter-point
+    # moves adds a gradual-path assumption. Both are shown, weakest last.
     cuts = policy.get("cuts_priced_12m")
     bps = policy.get("terminal_easing_12m_bp")
-    if cuts is not None:
+    if cuts is not None and bps is not None:
         if cuts >= 0.15:
-            add("Cuts priced (12m)", f"{cuts:.1f}", f"{bps}bp, curve-derived")
+            add("Easing priced (12m)", f"{abs(bps)}bp",
+                f"about {abs(cuts):.1f} cuts, curve-derived")
         elif cuts <= -0.15:
-            add("Hikes priced (12m)", f"{abs(cuts):.1f}",
-                f"{abs(bps)}bp, curve-derived")
+            add("Tightening priced (12m)", f"{abs(bps)}bp",
+                f"about {abs(cuts):.1f} hikes, curve-derived")
         else:
             add("Policy path (12m)", "flat", "no change priced, curve-derived")
 
